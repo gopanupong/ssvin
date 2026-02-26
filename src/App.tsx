@@ -285,6 +285,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
   });
   const [checklists, setChecklists] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
+  const isSubmitting = useRef(false);
   const [status, setStatus] = useState<string>('');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
 
@@ -323,11 +324,14 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
   };
 
   const handleSubmit = async () => {
+    if (isSubmitting.current) return;
+    
     if (!employeeId) {
       alert('ไม่พบรหัสพนักงาน กรุณาล็อกอินใหม่');
       return;
     }
     
+    isSubmitting.current = true;
     setUploading(true);
     setStatus('กำลังบีบอัดรูปภาพ...');
     console.log("Submitting inspection for employee:", employeeId);
@@ -446,6 +450,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
       alert('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ หรือไฟล์มีขนาดใหญ่เกินไป (Vercel Limit 4.5MB)');
     } finally {
       setUploading(false);
+      isSubmitting.current = false;
     }
   };
 

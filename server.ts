@@ -209,8 +209,22 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "SSVI API is running" });
 });
 
+const recentSubmissions = new Map<string, number>();
+
 app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res: any) => {
   const { employeeId, substationName, lat, lng, timestamp } = req.body;
+  
+  // Deduplication check
+  const submissionKey = `${employeeId}-${substationName}`;
+  const now = Date.now();
+  if (recentSubmissions.has(submissionKey)) {
+    const lastTime = recentSubmissions.get(submissionKey)!;
+    if (now - lastTime < 10000) { // 10 seconds window
+      console.log(`Duplicate submission detected for ${submissionKey}, ignoring...`);
+      return res.json({ success: true, message: "Duplicate request ignored" });
+    }
+  }
+  recentSubmissions.set(submissionKey, now);
   
   // Debug log to see what's coming in
   console.log("New Inspection Submission:");
