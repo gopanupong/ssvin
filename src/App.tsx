@@ -212,10 +212,10 @@ const SelectionPage = ({ onSelect, onLogout }: { onSelect: (sub: typeof SUBSTATI
 };
 
 const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substation: typeof SUBSTATIONS[0]; employeeId: string; onBack: () => void; onComplete: () => void }) => {
-  const [photos, setPhotos] = useState<{ [key: string]: File | null }>({
-    building: null,
-    yard: null,
-    roof: null,
+  const [photos, setPhotos] = useState<{ [key: string]: File[] }>({
+    building: [],
+    yard: [],
+    roof: [],
   });
   const [checklists, setChecklists] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -236,7 +236,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
     input.onchange = (e: any) => {
       const file = e.target.files[0];
       if (file) {
-        setPhotos(prev => ({ ...prev, [key]: file }));
+        setPhotos(prev => ({ ...prev, [key]: [...prev[key], file] }));
       }
     };
     input.click();
@@ -284,10 +284,14 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
         }
       };
 
-      if (photos.building) await appendCompressed(photos.building, 'building.jpg');
-      if (photos.yard) await appendCompressed(photos.yard, 'yard.jpg');
-      if (photos.roof) await appendCompressed(photos.roof, 'roof.jpg');
+      // Append Fixed-Point photos
+      for (const [key, files] of Object.entries(photos)) {
+        for (let i = 0; i < files.length; i++) {
+          await appendCompressed(files[i], `${key}_${i + 1}.jpg`);
+        }
+      }
       
+      // Append Checklists
       for (let i = 0; i < checklists.length; i++) {
         await appendCompressed(checklists[i], `checklist_${i + 1}.jpg`);
       }
@@ -311,7 +315,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
     }
   };
 
-  const isReady = photos.building && photos.yard && photos.roof && checklists.length > 0;
+  const isReady = photos.building.length > 0 && photos.yard.length > 0 && photos.roof.length > 0 && checklists.length > 0;
 
   return (
     <div className="min-h-screen bg-violet-50 p-6 pb-32">
@@ -326,56 +330,70 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
           </div>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-8">
           <section>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">จุดตรวจสอบมาตรฐาน (Fixed-Point)</p>
-            <div className="grid gap-4">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">จุดตรวจสอบมาตรฐาน (Fixed-Point)</p>
+            <div className="space-y-6">
               {[
                 { id: 'building', label: 'อาคารควบคุม', desc: 'ความสะอาดภายใน/ภายนอก' },
                 { id: 'yard', label: 'ลานไกไฟฟ้า', desc: 'การจัดการวัชพืช/หญ้า' },
                 { id: 'roof', label: 'หลังคาอาคาร', desc: 'สภาพความสะอาด/รอยรั่ว' },
               ].map((point) => (
-                <div key={point.id}>
-                  <Card className="p-4 flex items-center gap-4">
-                    <div className={cn(
-                      "w-12 h-12 rounded-xl flex items-center justify-center transition-colors",
-                      photos[point.id] ? "bg-violet-100 text-violet-600" : "bg-slate-100 text-slate-400"
-                    )}>
-                      {photos[point.id] ? <CheckCircle2 size={24} /> : <Camera size={24} />}
-                    </div>
-                    <div className="flex-1">
+                <div key={point.id} className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <div>
                       <h4 className="font-bold text-slate-800 text-sm">{point.label}</h4>
-                      <p className="text-xs text-slate-500">{point.desc}</p>
+                      <p className="text-[10px] text-slate-500">{point.desc}</p>
                     </div>
                     <button 
                       onClick={() => handleCapture(point.id)}
-                      className={cn(
-                        "px-4 py-2 rounded-lg text-xs font-bold transition-all",
-                        photos[point.id] ? "bg-slate-100 text-slate-600" : "bg-violet-600 text-white"
-                      )}
+                      className="bg-violet-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 active:scale-95 transition-all"
                     >
-                      {photos[point.id] ? 'ถ่ายใหม่' : 'ถ่ายภาพ'}
+                      <Plus size={14} /> เพิ่มรูป
                     </button>
-                  </Card>
+                  </div>
+                  
+                  <div className="grid grid-cols-4 gap-2">
+                    {photos[point.id].map((file, i) => (
+                      <div key={i} className="aspect-square bg-slate-200 rounded-lg overflow-hidden relative group">
+                        <img src={URL.createObjectURL(file)} className="w-full h-full object-cover" />
+                        <button 
+                          onClick={() => setPhotos(prev => ({
+                            ...prev,
+                            [point.id]: prev[point.id].filter((_, idx) => idx !== i)
+                          }))}
+                          className="absolute top-0.5 right-0.5 w-5 h-5 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-lg text-xs"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    {photos[point.id].length === 0 && (
+                      <div className="col-span-4 py-4 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center text-slate-400">
+                        <Camera size={20} className="mb-1 opacity-30" />
+                        <span className="text-[10px]">ยังไม่มีรูปภาพ</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
           </section>
 
           <section>
-            <div className="flex justify-between items-center mb-3">
+            <div className="flex justify-between items-center mb-4">
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">กระดาษ Check List (A4)</p>
               <span className="text-xs font-bold text-violet-600 bg-violet-50 px-2 py-1 rounded-full">
                 {checklists.length} แผ่น
               </span>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-4 gap-2">
               {checklists.map((file, i) => (
-                <div key={i} className="aspect-square bg-slate-200 rounded-xl overflow-hidden relative group">
+                <div key={i} className="aspect-square bg-slate-200 rounded-lg overflow-hidden relative group">
                   <img src={URL.createObjectURL(file)} className="w-full h-full object-cover" />
                   <button 
                     onClick={() => setChecklists(prev => prev.filter((_, idx) => idx !== i))}
-                    className="absolute top-1 right-1 w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-lg"
+                    className="absolute top-0.5 right-0.5 w-5 h-5 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-lg text-xs"
                   >
                     ×
                   </button>
@@ -383,10 +401,10 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
               ))}
               <button 
                 onClick={handleAddChecklist}
-                className="aspect-square border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center text-slate-400 hover:border-violet-500 hover:text-violet-500 transition-all"
+                className="aspect-square border-2 border-dashed border-slate-300 rounded-lg flex flex-col items-center justify-center text-slate-400 hover:border-violet-500 hover:text-violet-500 transition-all"
               >
-                <Plus size={24} />
-                <span className="text-[10px] font-bold mt-1">เพิ่มหน้า</span>
+                <Plus size={20} />
+                <span className="text-[8px] font-bold mt-1">เพิ่มหน้า</span>
               </button>
             </div>
           </section>
