@@ -18,6 +18,11 @@ const app = express();
 const PORT = 3000;
 const upload = multer({ dest: "uploads/" });
 
+// Ensure uploads directory exists
+if (!fs.existsSync("uploads")) {
+  fs.mkdirSync("uploads");
+}
+
 // Database Client
 const dbClient = new Client({
   connectionString: process.env.DATABASE_URL,

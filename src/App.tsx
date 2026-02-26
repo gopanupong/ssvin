@@ -275,13 +275,14 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
         method: 'POST',
         body: formData,
       });
+      const data = await res.json();
       if (res.ok) {
         onComplete();
       } else {
-        alert('เกิดข้อผิดพลาดในการอัปโหลด');
+        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่สามารถอัปโหลดได้'}`);
       }
     } catch (err) {
-      alert('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
+      alert('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ หรือไฟล์มีขนาดใหญ่เกินไป');
     } finally {
       setUploading(false);
     }
