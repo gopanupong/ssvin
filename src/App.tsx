@@ -641,7 +641,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
 };
 
 const DashboardPage = ({ onBack }: { onBack: () => void }) => {
-  const [stats, setStats] = useState<{ total: number; recent: InspectionLog[] }>({ total: 0, recent: [] });
+  const [stats, setStats] = useState<{ total: number; totalSubmissions: number; recent: InspectionLog[] }>({ total: 0, totalSubmissions: 0, recent: [] });
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -723,6 +723,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
             <Card className="bg-violet-600 text-white border-none shadow-lg shadow-violet-200">
               <p className="text-violet-100 text-xs font-bold uppercase tracking-wider mb-1">ตรวจสอบแล้ว ({months[selectedMonth].label})</p>
               <h3 className="text-4xl font-bold">{stats.total} <span className="text-lg font-normal opacity-70">สถานี</span></h3>
+              <p className="text-[10px] text-violet-100 mt-1 font-bold">รวม {stats.totalSubmissions} รายการส่ง</p>
             </Card>
           </div>
           <div key="pending">
@@ -734,7 +735,10 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
           <div key="coverage">
             <Card>
               <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">ความครอบคลุม</p>
-              <h3 className="text-4xl font-bold text-slate-800">{Math.round((stats.total / SUBSTATIONS.length) * 100)}%</h3>
+              <h3 className="text-4xl font-bold text-slate-800">
+                {((stats.total / SUBSTATIONS.length) * 100).toFixed(1)}%
+              </h3>
+              <p className="text-[10px] text-slate-400 mt-1 font-bold">จากทั้งหมด {SUBSTATIONS.length} สถานี</p>
             </Card>
           </div>
         </div>

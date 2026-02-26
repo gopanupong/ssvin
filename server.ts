@@ -460,6 +460,7 @@ app.get("/api/dashboard-stats", async (req, res) => {
 
     res.json({
       total: uniqueSubstations.size,
+      totalSubmissions: filteredLogs.length,
       recent: filteredLogs,
     });
   } catch (error: any) {
