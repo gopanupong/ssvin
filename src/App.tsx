@@ -645,6 +645,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [showPendingModal, setShowPendingModal] = useState(false);
 
   const months = [
     { value: 0, label: 'มกราคม' },
@@ -673,6 +674,10 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
         setLoading(false);
       });
   }, [selectedMonth, selectedYear]);
+
+  const pendingSubstations = SUBSTATIONS.filter(sub => 
+    !stats.recent.some(log => log.substation_name === sub.name)
+  );
 
   return (
     <div className="min-h-screen bg-violet-50 p-6 relative">
@@ -726,10 +731,18 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
               <p className="text-[10px] text-violet-100 mt-1 font-bold">รวม {stats.totalSubmissions} รายการส่ง</p>
             </Card>
           </div>
-          <div key="pending">
-            <Card>
-              <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">รอดำเนินการ</p>
-              <h3 className="text-4xl font-bold text-slate-800">{SUBSTATIONS.length - stats.total} <span className="text-lg font-normal opacity-40">สถานี</span></h3>
+          <div key="pending" className="cursor-pointer" onClick={() => setShowPendingModal(true)}>
+            <Card className="hover:border-violet-300 hover:shadow-md transition-all group">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">รอดำเนินการ</p>
+                  <h3 className="text-4xl font-bold text-slate-800">{SUBSTATIONS.length - stats.total} <span className="text-lg font-normal opacity-40">สถานี</span></h3>
+                </div>
+                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 group-hover:bg-violet-50 group-hover:text-violet-500 transition-colors">
+                  <ChevronRight size={18} />
+                </div>
+              </div>
+              <p className="text-[10px] text-violet-600 mt-1 font-bold opacity-0 group-hover:opacity-100 transition-opacity">คลิกเพื่อดูรายชื่อ</p>
             </Card>
           </div>
           <div key="coverage">
@@ -795,6 +808,73 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
           </div>
         </Card>
       </div>
+
+      {/* Pending Substations Modal */}
+      <AnimatePresence>
+        {showPendingModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowPendingModal(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+            >
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0 z-10">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900">สถานีที่รอดำเนินการ</h3>
+                  <p className="text-xs font-bold text-violet-600 uppercase tracking-wider">
+                    ประจำเดือน {months[selectedMonth].label} {selectedYear + 543}
+                  </p>
+                </div>
+                <button 
+                  onClick={() => setShowPendingModal(false)}
+                  className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors"
+                >
+                  <Plus size={24} className="rotate-45" />
+                </button>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {pendingSubstations.map((sub, idx) => (
+                    <div key={sub.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 font-bold text-xs">
+                        {(idx + 1).toString().padStart(2, '0')}
+                      </div>
+                      <div>
+                        <h5 className="font-bold text-slate-800 text-sm">{sub.name}</h5>
+                        <p className="text-[10px] text-slate-400 uppercase font-bold tracking-tighter">ยังไม่มีการตรวจสอบ</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {pendingSubstations.length === 0 && (
+                  <div className="py-20 text-center">
+                    <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <CheckCircle2 size={40} />
+                    </div>
+                    <h4 className="text-lg font-bold text-slate-900">ตรวจสอบครบทุกสถานีแล้ว!</h4>
+                    <p className="text-sm text-slate-500">ยอดเยี่ยมมาก ทีมงานตรวจสอบครบถ้วน 100%</p>
+                  </div>
+                )}
+              </div>
+              
+              <div className="p-6 border-t border-slate-100 bg-white sticky bottom-0 z-10">
+                <Button onClick={() => setShowPendingModal(false)} className="w-full">
+                  ปิดหน้าต่าง
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
