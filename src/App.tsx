@@ -18,6 +18,7 @@ import {
 import { cn, SUBSTATIONS, InspectionLog } from './constants';
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
+import imageCompression from 'browser-image-compression';
 
 // --- Components ---
 
@@ -218,6 +219,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
   });
   const [checklists, setChecklists] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [status, setStatus] = useState<string>('');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
@@ -256,21 +258,41 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
 
   const handleSubmit = async () => {
     setUploading(true);
-    const formData = new FormData();
-    formData.append('employeeId', employeeId);
-    formData.append('substationName', substation.name);
-    formData.append('lat', location?.lat.toString() || '0');
-    formData.append('lng', location?.lng.toString() || '0');
-    formData.append('timestamp', new Date().toISOString());
-
-    if (photos.building) formData.append('photos', photos.building, 'building.jpg');
-    if (photos.yard) formData.append('photos', photos.yard, 'yard.jpg');
-    if (photos.roof) formData.append('photos', photos.roof, 'roof.jpg');
-    checklists.forEach((file, i) => {
-      formData.append('photos', file, `checklist_${i + 1}.jpg`);
-    });
-
+    setStatus('กำลังบีบอัดรูปภาพ...');
     try {
+      const formData = new FormData();
+      formData.append('employeeId', employeeId);
+      formData.append('substationName', substation.name);
+      formData.append('lat', location?.lat.toString() || '0');
+      formData.append('lng', location?.lng.toString() || '0');
+      formData.append('timestamp', new Date().toISOString());
+
+      const compressionOptions = {
+        maxSizeMB: 0.7, // Target size under 1MB
+        maxWidthOrHeight: 1280,
+        useWebWorker: true
+      };
+
+      // Helper to compress and append
+      const appendCompressed = async (file: File, name: string) => {
+        try {
+          const compressed = await imageCompression(file, compressionOptions);
+          formData.append('photos', compressed, name);
+        } catch (e) {
+          console.error("Compression failed, using original", e);
+          formData.append('photos', file, name);
+        }
+      };
+
+      if (photos.building) await appendCompressed(photos.building, 'building.jpg');
+      if (photos.yard) await appendCompressed(photos.yard, 'yard.jpg');
+      if (photos.roof) await appendCompressed(photos.roof, 'roof.jpg');
+      
+      for (let i = 0; i < checklists.length; i++) {
+        await appendCompressed(checklists[i], `checklist_${i + 1}.jpg`);
+      }
+
+      setStatus('กำลังส่งข้อมูลไปยัง Google Drive...');
       const res = await fetch('/api/upload-inspection', {
         method: 'POST',
         body: formData,
@@ -282,7 +304,8 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
         alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่สามารถอัปโหลดได้'}`);
       }
     } catch (err) {
-      alert('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ หรือไฟล์มีขนาดใหญ่เกินไป');
+      console.error(err);
+      alert('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ หรือไฟล์มีขนาดใหญ่เกินไป (Vercel Limit 4.5MB)');
     } finally {
       setUploading(false);
     }
@@ -378,7 +401,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
             >
               {uploading ? (
                 <>
-                  <Loader2 className="animate-spin" /> กำลังส่งข้อมูล...
+                  <Loader2 className="animate-spin" /> {status || 'กำลังส่งข้อมูล...'}
                 </>
               ) : (
                 <>
