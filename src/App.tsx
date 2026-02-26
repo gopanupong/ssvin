@@ -505,29 +505,66 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
 const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   const [stats, setStats] = useState<{ total: number; recent: InspectionLog[] }>({ total: 0, recent: [] });
   const [loading, setLoading] = useState(true);
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+  const months = [
+    { value: 0, label: 'มกราคม' },
+    { value: 1, label: 'กุมภาพันธ์' },
+    { value: 2, label: 'มีนาคม' },
+    { value: 3, label: 'เมษายน' },
+    { value: 4, label: 'พฤษภาคม' },
+    { value: 5, label: 'มิถุนายน' },
+    { value: 6, label: 'กรกฎาคม' },
+    { value: 7, label: 'สิงหาคม' },
+    { value: 8, label: 'กันยายน' },
+    { value: 9, label: 'ตุลาคม' },
+    { value: 10, label: 'พฤศจิกายน' },
+    { value: 11, label: 'ธันวาคม' },
+  ];
+
+  const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
 
   useEffect(() => {
-    fetch('/api/dashboard-stats')
+    setLoading(true);
+    fetch(`/api/dashboard-stats?month=${selectedMonth + 1}&year=${selectedYear}`)
       .then(res => res.json())
       .then(data => {
         setStats(data);
         setLoading(false);
       });
-  }, []);
+  }, [selectedMonth, selectedYear]);
 
   return (
     <div className="min-h-screen bg-violet-50 p-6">
       <div className="max-w-4xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div className="flex items-center gap-4">
             <button onClick={onBack} className="p-2 -ml-2 text-slate-400 hover:text-slate-900">
               <ChevronRight size={24} className="rotate-180" />
             </button>
             <h2 className="text-2xl font-bold text-slate-900">Executive Dashboard</h2>
           </div>
-          <div className="bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">เดือนปัจจุบัน</span>
-            <span className="font-bold text-slate-800">{format(new Date(), 'MMMM yyyy', { locale: th })}</span>
+          
+          <div className="flex gap-2">
+            <select 
+              value={selectedMonth} 
+              onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+              className="bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-violet-500"
+            >
+              {months.map(m => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+            <select 
+              value={selectedYear} 
+              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+              className="bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-violet-500"
+            >
+              {years.map(y => (
+                <option key={y} value={y}>{y + 543}</option>
+              ))}
+            </select>
           </div>
         </div>
 

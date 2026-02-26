@@ -356,21 +356,36 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
 });
 
 app.get("/api/dashboard-stats", async (req, res) => {
+  const { month, year } = req.query;
   const client = getDbClient();
   if (!client) {
     return res.json({
       total: 0,
       recent: [],
-      bySubstation: {}
     });
   }
   try {
-    const result = await client.query("SELECT * FROM inspection_logs ORDER BY timestamp DESC LIMIT 50");
+    let query = "SELECT * FROM inspection_logs";
+    let countQuery = "SELECT COUNT(DISTINCT substation_name) FROM inspection_logs";
+    const params: any[] = [];
+
+    if (month && year) {
+      query += " WHERE EXTRACT(MONTH FROM timestamp) = $1 AND EXTRACT(YEAR FROM timestamp) = $2";
+      countQuery += " WHERE EXTRACT(MONTH FROM timestamp) = $1 AND EXTRACT(YEAR FROM timestamp) = $2";
+      params.push(month, year);
+    }
+
+    query += " ORDER BY timestamp DESC LIMIT 100";
+
+    const result = await client.query(query, params);
+    const countResult = await client.query(countQuery, params);
+    
     res.json({
-      total: result.rowCount,
+      total: parseInt(countResult.rows[0].count),
       recent: result.rows,
     });
   } catch (error) {
+    console.error("Dashboard stats error:", error);
     res.status(500).json({ error: "Failed to fetch stats" });
   }
 });
