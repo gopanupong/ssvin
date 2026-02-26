@@ -299,7 +299,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
               // Setup text style
               const fontSize = Math.max(20, Math.floor(canvas.width / 40));
               ctx.font = `bold ${fontSize}px sans-serif`;
-              const timestamp = format(new Date(), 'dd/MM/yyyy HH:mm', { locale: th });
+              const timestamp = format(new Date(), 'dd/MM/yyyy HH:mm:ss', { locale: th });
               
               // Measure text for background/position
               const textWidth = ctx.measureText(timestamp).width;

@@ -235,21 +235,20 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
       year: "2-digit",
     }).replace(/\//g, ""); 
     
-    const folderName = `${substationName}_${dateStr}`;
     const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || "1IzXUWJfucyb47Dr32QSVIxBKmoMrWF6J";
 
-    // 1. Find or Create Folder
-    let folderId;
-    const folderQuery = await driveService.files.list({
-      q: `name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and '${parentFolderId}' in parents and trashed = false`,
+    // 1. Find or Create Main Substation Folder (e.g., "สถานีไฟฟ้านครชัยศรี 1")
+    let mainFolderId;
+    const mainFolderQuery = await driveService.files.list({
+      q: `name = '${substationName}' and mimeType = 'application/vnd.google-apps.folder' and '${parentFolderId}' in parents and trashed = false`,
       fields: "files(id)",
     });
 
-    if (folderQuery.data.files.length > 0) {
-      folderId = folderQuery.data.files[0].id;
+    if (mainFolderQuery.data.files && mainFolderQuery.data.files.length > 0) {
+      mainFolderId = mainFolderQuery.data.files[0].id;
     } else {
       const folderMetadata = {
-        name: folderName,
+        name: substationName,
         mimeType: "application/vnd.google-apps.folder",
         parents: [parentFolderId],
       };
@@ -257,14 +256,37 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
         resource: folderMetadata,
         fields: "id",
       });
-      folderId = folder.data.id;
+      mainFolderId = folder.data.id;
     }
 
-    // 2. Upload Files
+    // 2. Find or Create Daily Folder (e.g., "สถานีไฟฟ้านครชัยศรี 1_260269") inside Main Folder
+    const dailyFolderName = `${substationName}_${dateStr}`;
+    let dailyFolderId;
+    const dailyFolderQuery = await driveService.files.list({
+      q: `name = '${dailyFolderName}' and mimeType = 'application/vnd.google-apps.folder' and '${mainFolderId}' in parents and trashed = false`,
+      fields: "files(id)",
+    });
+
+    if (dailyFolderQuery.data.files && dailyFolderQuery.data.files.length > 0) {
+      dailyFolderId = dailyFolderQuery.data.files[0].id;
+    } else {
+      const folderMetadata = {
+        name: dailyFolderName,
+        mimeType: "application/vnd.google-apps.folder",
+        parents: [mainFolderId],
+      };
+      const folder = await driveService.files.create({
+        resource: folderMetadata,
+        fields: "id",
+      });
+      dailyFolderId = folder.data.id;
+    }
+
+    // 3. Upload Files to Daily Folder
     for (const file of files) {
       const fileMetadata = {
         name: file.originalname,
-        parents: [folderId],
+        parents: [dailyFolderId],
       };
       const media = {
         mimeType: file.mimetype,
@@ -283,7 +305,7 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
       try {
         await client.query(
           "INSERT INTO inspection_logs (employee_id, substation_name, gps_lat, gps_lng, folder_id) VALUES ($1, $2, $3, $4, $5)",
-          [employeeId || "Unknown", substationName, lat, lng, folderId]
+          [employeeId || "Unknown", substationName, lat, lng, dailyFolderId]
         );
       } catch (dbErr) {
         console.error("DB Log failed:", dbErr);
@@ -297,7 +319,7 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
       try {
         // Format date/time explicitly for Google Sheets
         const formattedDate = dateObj.toLocaleDateString("th-TH");
-        const formattedTime = dateObj.toLocaleTimeString("th-TH");
+        const formattedTime = dateObj.toLocaleTimeString("th-TH", { hour12: false });
         const dateTimeStr = `${formattedDate} ${formattedTime}`;
 
         const rowData = [
@@ -306,7 +328,7 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
           substationName || "ไม่ระบุ",
           lat || "0",
           lng || "0",
-          `https://drive.google.com/drive/folders/${folderId}`,
+          `https://drive.google.com/drive/folders/${dailyFolderId}`,
           "Completed"
         ];
         
@@ -326,7 +348,7 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
       }
     }
 
-    res.json({ success: true, folderId });
+    res.json({ success: true, folderId: dailyFolderId });
   } catch (error: any) {
     console.error("Upload error:", error);
     res.status(500).json({ error: error.message });
