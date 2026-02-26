@@ -336,16 +336,25 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
         }
       };
 
+      const now = new Date();
+      const timeStr = format(now, 'HHmm');
+      const dateStr = now.toLocaleDateString("th-TH", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "2-digit",
+      }).replace(/\//g, "");
+      const nameSuffix = `${timeStr}_${dateStr}`;
+
       // Append Fixed-Point photos
       for (const [key, files] of Object.entries(photos) as [string, File[]][]) {
         for (let i = 0; i < files.length; i++) {
-          await appendCompressed(files[i], `${key}_${i + 1}.jpg`);
+          await appendCompressed(files[i], `${key}_${i + 1}_${nameSuffix}.jpg`);
         }
       }
       
       // Append Checklists
       for (let i = 0; i < checklists.length; i++) {
-        await appendCompressed(checklists[i], `checklist_${i + 1}.jpg`);
+        await appendCompressed(checklists[i], `checklist_${i + 1}_${nameSuffix}.jpg`);
       }
 
       setStatus('กำลังส่งข้อมูลไปยัง Google Drive...');
