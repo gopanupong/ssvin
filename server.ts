@@ -295,27 +295,32 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
     const sheetId = process.env.GOOGLE_SHEET_ID || "1WpvuQnhXzufiBmSRSaEnkRFs9BJf5H4fIWZ0xoYC8iw";
     if (sheetsService && sheetId) {
       try {
-        // Use the first sheet (usually 'Sheet1')
+        // Format date/time explicitly for Google Sheets
+        const formattedDate = dateObj.toLocaleDateString("th-TH");
+        const formattedTime = dateObj.toLocaleTimeString("th-TH");
+        const dateTimeStr = `${formattedDate} ${formattedTime}`;
+
         const rowData = [
-          dateObj.toLocaleString("th-TH"),
-          employeeId || "ไม่ระบุ", // Ensure it's not empty
-          substationName,
-          lat,
-          lng,
+          dateTimeStr,
+          (employeeId && String(employeeId).trim()) ? String(employeeId).trim() : "ไม่ระบุ",
+          substationName || "ไม่ระบุ",
+          lat || "0",
+          lng || "0",
           `https://drive.google.com/drive/folders/${folderId}`,
           "Completed"
         ];
         
-        console.log("Appending to Google Sheet:", rowData);
+        console.log("Final Row Data for Sheets:", rowData);
 
         await sheetsService.spreadsheets.values.append({
           spreadsheetId: sheetId,
-          range: "Sheet1!A:G",
+          range: "A:G", // Try appending to the first sheet without explicit name
           valueInputOption: "USER_ENTERED",
           requestBody: {
             values: [rowData]
           }
         });
+        console.log("Successfully appended to Google Sheets");
       } catch (sheetErr) {
         console.error("Failed to log to Google Sheets:", sheetErr);
       }

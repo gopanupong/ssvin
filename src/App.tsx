@@ -257,8 +257,15 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
   };
 
   const handleSubmit = async () => {
+    if (!employeeId) {
+      alert('ไม่พบรหัสพนักงาน กรุณาล็อกอินใหม่');
+      return;
+    }
+    
     setUploading(true);
     setStatus('กำลังบีบอัดรูปภาพ...');
+    console.log("Submitting inspection for employee:", employeeId);
+    
     try {
       const formData = new FormData();
       formData.append('employeeId', employeeId);
