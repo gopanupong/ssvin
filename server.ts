@@ -5,6 +5,7 @@ import { Client } from "pg";
 import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
+import { Readable } from "stream";
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
@@ -15,8 +16,8 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
-// Use /tmp for Vercel compatibility as it's the only writable directory
-const upload = multer({ dest: "/tmp" });
+// Use memoryStorage so files are never written to Vercel's disk
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Database Client (Lazy initialization to prevent crash on Vercel if URL is missing)
 let dbClient: any = null;
@@ -259,15 +260,13 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
       };
       const media = {
         mimeType: file.mimetype,
-        body: fs.createReadStream(file.path),
+        body: Readable.from(file.buffer),
       };
       await driveService.files.create({
         resource: fileMetadata,
         media: media,
         fields: "id",
       });
-      // Cleanup local file
-      fs.unlinkSync(file.path);
     }
 
     // 3. Log to Database
