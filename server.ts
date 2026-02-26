@@ -240,13 +240,16 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
   }
 
   try {
-    // Ensure we have a valid date
+    // Ensure we have a valid date in Thailand timezone
     const dateObj = timestamp ? new Date(timestamp) : new Date();
-    const dateStr = dateObj.toLocaleDateString("th-TH", {
+    
+    // Format for folder naming (DDMMYY)
+    const dateStr = new Intl.DateTimeFormat("th-TH", {
       day: "2-digit",
       month: "2-digit",
       year: "2-digit",
-    }).replace(/\//g, ""); 
+      timeZone: "Asia/Bangkok"
+    }).format(dateObj).replace(/\//g, ""); 
     
     const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || "1IzXUWJfucyb47Dr32QSVIxBKmoMrWF6J";
 
@@ -330,10 +333,20 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
     const sheetId = process.env.GOOGLE_SHEET_ID || "1WpvuQnhXzufiBmSRSaEnkRFs9BJf5H4fIWZ0xoYC8iw";
     if (sheetsService && sheetId) {
       try {
-        // Format date/time explicitly for Google Sheets
-        const formattedDate = dateObj.toLocaleDateString("th-TH");
-        const formattedTime = dateObj.toLocaleTimeString("th-TH", { hour12: false });
-        const dateTimeStr = `${formattedDate} ${formattedTime}`;
+        // Format date/time explicitly for Google Sheets in Thailand timezone
+        const options: Intl.DateTimeFormatOptions = { 
+          timeZone: "Asia/Bangkok",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false 
+        };
+        
+        const formatter = new Intl.DateTimeFormat("th-TH", options);
+        const dateTimeStr = formatter.format(dateObj);
 
         const rowData = [
           dateTimeStr,
@@ -370,36 +383,85 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
 
 app.get("/api/dashboard-stats", async (req, res) => {
   const { month, year } = req.query;
-  const pool = getDbPool();
-  if (!pool) {
-    return res.json({
-      total: 0,
-      recent: [],
-    });
+  const sheetsService = getSheetsService();
+  const sheetId = process.env.GOOGLE_SHEET_ID || "1WpvuQnhXzufiBmSRSaEnkRFs9BJf5H4fIWZ0xoYC8iw";
+
+  if (!sheetsService || !sheetId) {
+    return res.json({ total: 0, recent: [], error: "Google Sheets service not configured" });
   }
+
   try {
-    let query = "SELECT * FROM inspection_logs";
-    let countQuery = "SELECT COUNT(DISTINCT substation_name) FROM inspection_logs";
-    const params: any[] = [];
-
-    if (month && year) {
-      query += " WHERE EXTRACT(MONTH FROM timestamp) = $1 AND EXTRACT(YEAR FROM timestamp) = $2";
-      countQuery += " WHERE EXTRACT(MONTH FROM timestamp) = $1 AND EXTRACT(YEAR FROM timestamp) = $2";
-      params.push(parseInt(month as string), parseInt(year as string));
-    }
-
-    query += " ORDER BY timestamp DESC LIMIT 100";
-
-    const result = await pool.query(query, params);
-    const countResult = await pool.query(countQuery, params);
-    
-    res.json({
-      total: parseInt(countResult.rows[0].count),
-      recent: result.rows,
+    const response = await sheetsService.spreadsheets.values.get({
+      spreadsheetId: sheetId,
+      range: "A2:G", // Fetch from the first sheet
     });
-  } catch (error) {
-    console.error("Dashboard stats error:", error);
-    res.status(500).json({ error: "Failed to fetch stats" });
+
+    const rows = response.data.values || [];
+    const targetMonth = parseInt(month as string);
+    const targetYear = parseInt(year as string);
+
+    const filteredLogs = rows.map((row, index) => {
+      // Row structure: [Timestamp, EmployeeID, SubstationName, Lat, Lng, FolderURL, Status]
+      const timestampStr = row[0] || "";
+      if (!timestampStr) return null;
+
+      // Parse "DD/MM/YYYY HH:mm:ss" or "DD/MM/YYYY HH:mm"
+      const parts = timestampStr.split(" ");
+      const dateParts = parts[0].split("/");
+      const timeParts = parts[1] ? parts[1].split(":") : [0, 0, 0];
+      
+      if (dateParts.length < 3) return null;
+
+      const day = parseInt(dateParts[0]);
+      const monthIdx = parseInt(dateParts[1]) - 1;
+      let yearVal = parseInt(dateParts[2]);
+
+      // Convert BE to AD if necessary (e.g. 2569 -> 2026)
+      if (yearVal > 2500) yearVal -= 543;
+
+      const hour = parseInt(timeParts[0]) || 0;
+      const minute = parseInt(timeParts[1]) || 0;
+      const second = parseInt(timeParts[2]) || 0;
+
+      const logDate = new Date(yearVal, monthIdx, day, hour, minute, second);
+      if (isNaN(logDate.getTime())) return null;
+      
+      // Check if it matches the filter
+      if (targetMonth && targetYear) {
+        if (logDate.getMonth() + 1 !== targetMonth || logDate.getFullYear() !== targetYear) {
+          return null;
+        }
+      }
+
+      // Extract folder ID from URL: https://drive.google.com/drive/folders/ID
+      const folderUrl = row[5] || "";
+      const folderId = folderUrl.split("/").pop() || "";
+
+      return {
+        id: index,
+        employee_id: row[1] || "Unknown",
+        substation_name: row[2] || "Unknown",
+        timestamp: logDate.toISOString(),
+        gps_lat: parseFloat(row[3]) || 0,
+        gps_lng: parseFloat(row[4]) || 0,
+        folder_id: folderId,
+        status: row[6] || "completed"
+      };
+    }).filter(log => log !== null) as any[];
+
+    // Sort by timestamp descending
+    filteredLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    // Count unique substations
+    const uniqueSubstations = new Set(filteredLogs.map(log => log.substation_name));
+
+    res.json({
+      total: uniqueSubstations.size,
+      recent: filteredLogs,
+    });
+  } catch (error: any) {
+    console.error("Dashboard stats error (Sheets):", error);
+    res.status(500).json({ error: "Failed to fetch stats from Google Sheets: " + error.message });
   }
 });
 

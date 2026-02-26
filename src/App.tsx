@@ -576,7 +576,6 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
 const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   const [stats, setStats] = useState<{ total: number; recent: InspectionLog[] }>({ total: 0, recent: [] });
   const [loading, setLoading] = useState(true);
-  const [dbStatus, setDbStatus] = useState<{ connected: boolean; error?: string } | null>(null);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
@@ -600,12 +599,6 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
 
   useEffect(() => {
     setLoading(true);
-    // Check DB status
-    fetch('/api/debug-db')
-      .then(res => res.json())
-      .then(data => setDbStatus(data))
-      .catch(() => setDbStatus({ connected: false, error: 'Failed to reach API' }));
-
     fetch(`/api/dashboard-stats?month=${selectedMonth + 1}&year=${selectedYear}`)
       .then(res => res.json())
       .then(data => {
@@ -615,19 +608,16 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   }, [selectedMonth, selectedYear]);
 
   return (
-    <div className="min-h-screen bg-violet-50 p-6">
-      <div className="max-w-4xl mx-auto">
-        {dbStatus?.error && (
-          <div className="mb-6 p-4 bg-rose-50 border border-rose-100 rounded-2xl flex items-center gap-3 text-rose-600">
-            <AlertCircle size={20} />
-            <div className="text-sm">
-              <p className="font-bold">Database Error</p>
-              <p className="opacity-80">{dbStatus.error}</p>
-              <p className="text-[10px] mt-1">กรุณาตรวจสอบการตั้งค่า DATABASE_URL ใน Environment Variables</p>
-            </div>
+    <div className="min-h-screen bg-violet-50 p-6 relative">
+      {loading && (
+        <div className="absolute inset-0 bg-white/50 backdrop-blur-[2px] z-50 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="animate-spin text-violet-600" size={40} />
+            <p className="text-sm font-bold text-violet-600">กำลังดึงข้อมูลจาก Google Sheets...</p>
           </div>
-        )}
-        
+        </div>
+      )}
+      <div className="max-w-4xl mx-auto">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div className="flex items-center gap-4">
             <button onClick={onBack} className="p-2 -ml-2 text-slate-400 hover:text-slate-900">
