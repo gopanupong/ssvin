@@ -114,6 +114,20 @@ const LoginPage = ({ onLogin }: { onLogin: (id: string) => void }) => {
 const SelectionPage = ({ onSelect, onLogout }: { onSelect: (sub: typeof SUBSTATIONS[0]) => void; onLogout: () => void }) => {
   const [sortedSubstations, setSortedSubstations] = useState<(typeof SUBSTATIONS[0] & { distance?: number })[]>(SUBSTATIONS);
   const [loading, setLoading] = useState(true);
+  const [nearestSub, setNearestSub] = useState<(typeof SUBSTATIONS[0] & { distance?: number }) | null>(null);
+
+  // Haversine formula for accurate distance in km
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // Radius of the earth in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
 
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
@@ -121,18 +135,25 @@ const SelectionPage = ({ onSelect, onLogout }: { onSelect: (sub: typeof SUBSTATI
         const { latitude, longitude } = pos.coords;
         
         const withDistance = SUBSTATIONS.map(sub => {
-          // Simple Euclidean distance for sorting
-          const d = Math.sqrt(Math.pow(sub.lat - latitude, 2) + Math.pow(sub.lng - longitude, 2));
-          // Approximate distance in km (1 degree is roughly 111km)
-          const km = d * 111;
+          const km = calculateDistance(latitude, longitude, sub.lat, sub.lng);
           return { ...sub, distance: km };
         });
 
         const sorted = [...withDistance].sort((a, b) => (a.distance || 0) - (b.distance || 0));
         setSortedSubstations(sorted);
+        
+        // If the nearest is within 2km, consider it "detected"
+        if (sorted[0].distance && sorted[0].distance <= 2) {
+          setNearestSub(sorted[0]);
+        }
+        
         setLoading(false);
       },
-      () => setLoading(false)
+      (err) => {
+        console.error("Geolocation error:", err);
+        setLoading(false);
+      },
+      { enableHighAccuracy: true }
     );
   }, []);
 
@@ -150,61 +171,106 @@ const SelectionPage = ({ onSelect, onLogout }: { onSelect: (sub: typeof SUBSTATI
           </button>
         </div>
 
-        <div className="mb-8">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">สถานีใกล้เคียงคุณ</p>
-          <div className="space-y-3">
-            {displayNearby.map((sub, idx) => (
-              <motion.div 
-                key={sub.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: idx * 0.1 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => onSelect(sub)}
-                className="bg-violet-600 p-5 rounded-2xl text-white shadow-lg shadow-violet-200 cursor-pointer relative overflow-hidden group"
-              >
-                <div className="relative z-10">
-                  <div className="flex items-center gap-2 mb-1">
-                    <MapPin size={14} className="text-violet-200" />
-                    <span className="text-violet-100 text-[10px] font-medium uppercase tracking-wider">
-                      ห่างจากคุณ {sub.distance?.toFixed(1)} กม.
-                    </span>
-                  </div>
-                  <h3 className="text-lg font-bold">{sub.name}</h3>
+        <AnimatePresence>
+          {nearestSub && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              className="mb-8"
+            >
+              <Card className="bg-violet-600 text-white border-none shadow-xl shadow-violet-200 overflow-hidden relative p-0">
+                <div className="absolute top-0 right-0 p-4 opacity-10">
+                  <MapPin size={100} />
                 </div>
-                <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 opacity-50 group-hover:opacity-100 transition-opacity" />
-                <div className="absolute -right-2 -bottom-2 w-16 h-16 bg-white/10 rounded-full blur-xl" />
-              </motion.div>
-            ))}
-          </div>
-        </div>
-
-        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">สถานีอื่นๆ</p>
-        <div className="space-y-3">
-          {otherSubstations.map((sub) => (
-            <div key={sub.id}>
-              <Card className="p-0 overflow-hidden">
-                <button 
-                  onClick={() => onSelect(sub)}
-                  className="w-full p-5 flex items-center justify-between hover:bg-slate-50 transition-colors text-left"
-                >
-                  <div>
-                    <h4 className="font-bold text-slate-800">{sub.name}</h4>
-                    <div className="flex items-center gap-2 mt-1">
-                      <p className="text-xs text-slate-500">สถานีไฟฟ้าแรงสูง</p>
-                      {sub.distance !== undefined && (
-                        <>
-                          <span className="text-[10px] text-slate-300">•</span>
-                          <p className="text-[10px] font-bold text-violet-600">~ {sub.distance.toFixed(1)} กม.</p>
-                        </>
-                      )}
-                    </div>
+                <div className="p-6 relative z-10">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="bg-white/20 text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full flex items-center gap-1">
+                      <Loader2 size={10} className="animate-spin" /> ตรวจพบสถานีใกล้เคียง
+                    </span>
+                    <span className="text-[10px] font-bold opacity-70">ห่างจากคุณ {nearestSub.distance?.toFixed(2)} กม.</span>
                   </div>
-                  <ChevronRight size={18} className="text-slate-300" />
-                </button>
+                  <h3 className="text-2xl font-bold mb-4 leading-tight">{nearestSub.name}</h3>
+                  <Button 
+                    variant="secondary" 
+                    onClick={() => onSelect(nearestSub)}
+                    className="w-full bg-white text-violet-600 hover:bg-violet-50 border-none h-12"
+                  >
+                    เริ่มการตรวจสอบทันที <ChevronRight size={18} />
+                  </Button>
+                </div>
               </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <div className="space-y-8">
+          <section>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">สถานีแนะนำใกล้คุณ</p>
+            <div className="space-y-3">
+              {displayNearby.map((sub, idx) => (
+                <motion.div 
+                  key={sub.id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: idx * 0.1 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => onSelect(sub)}
+                  className={cn(
+                    "p-5 rounded-2xl shadow-sm cursor-pointer relative overflow-hidden group transition-all",
+                    nearestSub?.id === sub.id ? "bg-violet-50 border-2 border-violet-200" : "bg-white border border-slate-100"
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className={cn(
+                        "w-12 h-12 rounded-xl flex items-center justify-center transition-colors",
+                        nearestSub?.id === sub.id ? "bg-violet-600 text-white" : "bg-slate-50 text-slate-400 group-hover:bg-violet-50 group-hover:text-violet-600"
+                      )}>
+                        <MapPin size={24} />
+                      </div>
+                      <div className="text-left">
+                        <p className={cn("font-bold", nearestSub?.id === sub.id ? "text-violet-900" : "text-slate-800")}>{sub.name}</p>
+                        {sub.distance !== undefined && (
+                          <p className="text-xs text-slate-400 font-medium">ห่างจากคุณ {sub.distance.toFixed(1)} กม.</p>
+                        )}
+                      </div>
+                    </div>
+                    <ChevronRight size={20} className={cn("transition-all", nearestSub?.id === sub.id ? "text-violet-400" : "text-slate-300 group-hover:text-violet-500 group-hover:translate-x-1")} />
+                  </div>
+                </motion.div>
+              ))}
             </div>
-          ))}
+          </section>
+
+          <section>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">สถานีอื่นๆ</p>
+            <div className="space-y-3">
+              {otherSubstations.map((sub) => (
+                <div key={sub.id}>
+                  <Card className="p-0 overflow-hidden">
+                    <button 
+                      onClick={() => onSelect(sub)}
+                      className="w-full p-5 flex items-center justify-between hover:bg-slate-50 transition-colors text-left"
+                    >
+                      <div>
+                        <h4 className="font-bold text-slate-800">{sub.name}</h4>
+                        <div className="flex items-center gap-2 mt-1">
+                          <p className="text-xs text-slate-500">สถานีไฟฟ้าแรงสูง</p>
+                          {sub.distance !== undefined && (
+                            <>
+                              <span className="text-[10px] text-slate-300">•</span>
+                              <p className="text-[10px] font-bold text-violet-600">~ {sub.distance.toFixed(1)} กม.</p>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <ChevronRight size={18} className="text-slate-300" />
+                    </button>
+                  </Card>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
       </div>
     </div>
