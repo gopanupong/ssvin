@@ -523,7 +523,8 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
     { value: 11, label: 'ธันวาคม' },
   ];
 
-  const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
+  // Show years from 2567 (2024) to 2575 (2032)
+  const years = Array.from({ length: 9 }, (_, i) => 2024 + i);
 
   useEffect(() => {
     setLoading(true);
@@ -546,32 +547,35 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
             <h2 className="text-2xl font-bold text-slate-900">Executive Dashboard</h2>
           </div>
           
-          <div className="flex gap-2">
-            <select 
-              value={selectedMonth} 
-              onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-              className="bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-violet-500"
-            >
-              {months.map(m => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
-            <select 
-              value={selectedYear} 
-              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-              className="bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-violet-500"
-            >
-              {years.map(y => (
-                <option key={y} value={y}>{y + 543}</option>
-              ))}
-            </select>
+          <div className="flex flex-col items-end gap-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">เลือกเดือนที่ต้องการตรวจสอบ</span>
+            <div className="flex gap-2">
+              <select 
+                value={selectedMonth} 
+                onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                className="bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-violet-500"
+              >
+                {months.map(m => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+              <select 
+                value={selectedYear} 
+                onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                className="bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-violet-500"
+              >
+                {years.map(y => (
+                  <option key={y} value={y}>{y + 543}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div key="total">
             <Card className="bg-violet-600 text-white border-none shadow-lg shadow-violet-200">
-              <p className="text-violet-100 text-xs font-bold uppercase tracking-wider mb-1">ตรวจสอบแล้ว</p>
+              <p className="text-violet-100 text-xs font-bold uppercase tracking-wider mb-1">ตรวจสอบแล้ว ({months[selectedMonth].label})</p>
               <h3 className="text-4xl font-bold">{stats.total} <span className="text-lg font-normal opacity-70">สถานี</span></h3>
             </Card>
           </div>
@@ -591,8 +595,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
 
         <Card className="p-0 overflow-hidden">
           <div className="p-6 border-bottom border-slate-100 flex justify-between items-center">
-            <h4 className="font-bold text-slate-800">ประวัติการตรวจสอบล่าสุด</h4>
-            <button className="text-violet-600 text-sm font-bold hover:underline">ดูทั้งหมด</button>
+            <h4 className="font-bold text-slate-800">ประวัติการตรวจสอบ ({months[selectedMonth].label} {selectedYear + 543})</h4>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
