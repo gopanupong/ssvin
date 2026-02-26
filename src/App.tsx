@@ -288,11 +288,34 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
   const isSubmitting = useRef(false);
   const [status, setStatus] = useState<string>('');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+
+  const getGeoLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationError("เบราว์เซอร์ไม่รองรับ GPS");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setLocationError(null);
+        console.log("Location captured:", pos.coords.latitude, pos.coords.longitude);
+      },
+      (err) => {
+        console.error("Geolocation error:", err);
+        let msg = "ไม่สามารถระบุตำแหน่งได้";
+        if (err.code === 1) msg = "กรุณาอนุญาตการเข้าถึงตำแหน่ง (GPS)";
+        else if (err.code === 2) msg = "ไม่พบสัญญาณ GPS";
+        else if (err.code === 3) msg = "หมดเวลาการค้นหาตำแหน่ง";
+        setLocationError(msg);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
 
   useEffect(() => {
-    navigator.geolocation.getCurrentPosition((pos) => {
-      setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-    });
+    getGeoLocation();
   }, []);
 
   const handleCapture = (key: string) => {
@@ -329,6 +352,26 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
     if (!employeeId) {
       alert('ไม่พบรหัสพนักงาน กรุณาล็อกอินใหม่');
       return;
+    }
+
+    // Try to get location one last time if missing
+    if (!location) {
+      setStatus('กำลังระบุตำแหน่ง GPS...');
+      try {
+        await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+              setLocation(loc);
+              resolve(loc);
+            },
+            (err) => reject(err),
+            { enableHighAccuracy: true, timeout: 5000 }
+          );
+        });
+      } catch (e) {
+        console.warn("Could not get location at submit time", e);
+      }
     }
     
     isSubmitting.current = true;
@@ -465,11 +508,35 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
           </button>
           <div>
             <h2 className="text-xl font-bold text-slate-900">{substation.name}</h2>
-            <p className="text-xs font-semibold text-violet-600 uppercase tracking-wider">รายงานประจำเดือน</p>
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-semibold text-violet-600 uppercase tracking-wider">รายงานประจำเดือน</p>
+              <span className="text-[10px] text-slate-300">•</span>
+              <div className="flex items-center gap-1">
+                <div className={`w-1.5 h-1.5 rounded-full ${location ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+                <span className="text-[10px] font-bold text-slate-400 uppercase">
+                  {location ? 'GPS Active' : 'Waiting for GPS...'}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
         <div className="space-y-8">
+          {locationError && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3 text-amber-700 text-xs">
+              <AlertCircle size={16} className="shrink-0" />
+              <div className="flex-1">
+                <p className="font-bold">คำเตือน: {locationError}</p>
+                <p className="opacity-80">พิกัด GPS อาจไม่ถูกบันทึก กรุณาลองเปิด-ปิด GPS ใหม่</p>
+              </div>
+              <button 
+                onClick={getGeoLocation}
+                className="bg-amber-200 px-2 py-1 rounded-lg font-bold hover:bg-amber-300 transition-colors"
+              >
+                ลองใหม่
+              </button>
+            </div>
+          )}
           <section>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">จุดตรวจสอบมาตรฐาน (Fixed-Point)</p>
             <div className="space-y-6">
