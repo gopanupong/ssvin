@@ -1,7 +1,7 @@
 import express from "express";
 import multer from "multer";
 import { google } from "googleapis";
-import { Client } from "pg";
+import { Pool } from "pg";
 import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
@@ -19,33 +19,32 @@ const PORT = 3000;
 // Use memoryStorage so files are never written to Vercel's disk
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Database Client (Lazy initialization to prevent crash on Vercel if URL is missing)
-let dbClient: any = null;
+// Database Pool (Lazy initialization to prevent crash on Vercel if URL is missing)
+let dbPool: Pool | null = null;
 
-function getDbClient() {
-  if (dbClient) return dbClient;
+function getDbPool() {
+  if (dbPool) return dbPool;
   if (!process.env.DATABASE_URL) return null;
   try {
-    dbClient = new Client({
+    dbPool = new Pool({
       connectionString: process.env.DATABASE_URL,
       ssl: { rejectUnauthorized: false }
     });
-    return dbClient;
+    return dbPool;
   } catch (err) {
-    console.error("Failed to create DB client:", err);
+    console.error("Failed to create DB pool:", err);
     return null;
   }
 }
 
 async function initDb() {
-  const client = getDbClient();
-  if (!client) {
+  const pool = getDbPool();
+  if (!pool) {
     console.warn("DATABASE_URL not found. Database features will be disabled.");
     return;
   }
   try {
-    await client.connect();
-    await client.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS inspection_logs (
         id SERIAL PRIMARY KEY,
         employee_id TEXT NOT NULL,
@@ -57,9 +56,9 @@ async function initDb() {
         status TEXT DEFAULT 'completed'
       );
     `);
-    console.log("PostgreSQL connected and initialized.");
+    console.log("PostgreSQL initialized.");
   } catch (err) {
-    console.error("Failed to connect to database:", err);
+    console.error("Failed to initialize database:", err);
   }
 }
 
@@ -314,12 +313,12 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
     }
 
     // 3. Log to Database
-    const client = getDbClient();
-    if (client) {
+    const pool = getDbPool();
+    if (pool) {
       try {
-        await client.query(
-          "INSERT INTO inspection_logs (employee_id, substation_name, gps_lat, gps_lng, folder_id) VALUES ($1, $2, $3, $4, $5)",
-          [employeeId || "Unknown", substationName, lat, lng, dailyFolderId]
+        await pool.query(
+          "INSERT INTO inspection_logs (employee_id, substation_name, gps_lat, gps_lng, folder_id, timestamp) VALUES ($1, $2, $3, $4, $5, $6)",
+          [employeeId || "Unknown", substationName, lat, lng, dailyFolderId, dateObj]
         );
       } catch (dbErr) {
         console.error("DB Log failed:", dbErr);
@@ -371,8 +370,8 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
 
 app.get("/api/dashboard-stats", async (req, res) => {
   const { month, year } = req.query;
-  const client = getDbClient();
-  if (!client) {
+  const pool = getDbPool();
+  if (!pool) {
     return res.json({
       total: 0,
       recent: [],
@@ -386,13 +385,13 @@ app.get("/api/dashboard-stats", async (req, res) => {
     if (month && year) {
       query += " WHERE EXTRACT(MONTH FROM timestamp) = $1 AND EXTRACT(YEAR FROM timestamp) = $2";
       countQuery += " WHERE EXTRACT(MONTH FROM timestamp) = $1 AND EXTRACT(YEAR FROM timestamp) = $2";
-      params.push(month, year);
+      params.push(parseInt(month as string), parseInt(year as string));
     }
 
     query += " ORDER BY timestamp DESC LIMIT 100";
 
-    const result = await client.query(query, params);
-    const countResult = await client.query(countQuery, params);
+    const result = await pool.query(query, params);
+    const countResult = await pool.query(countQuery, params);
     
     res.json({
       total: parseInt(countResult.rows[0].count),
@@ -401,6 +400,26 @@ app.get("/api/dashboard-stats", async (req, res) => {
   } catch (error) {
     console.error("Dashboard stats error:", error);
     res.status(500).json({ error: "Failed to fetch stats" });
+  }
+});
+
+app.get("/api/debug-db", async (req, res) => {
+  const pool = getDbPool();
+  if (!pool) return res.json({ error: "No DATABASE_URL found in environment variables." });
+  try {
+    const result = await pool.query("SELECT COUNT(*) FROM inspection_logs");
+    const sample = await pool.query("SELECT * FROM inspection_logs ORDER BY timestamp DESC LIMIT 5");
+    res.json({ 
+      connected: true, 
+      count: result.rows[0].count, 
+      sample: sample.rows,
+      env: {
+        hasDbUrl: !!process.env.DATABASE_URL,
+        nodeEnv: process.env.NODE_ENV
+      }
+    });
+  } catch (e: any) {
+    res.json({ connected: false, error: e.message });
   }
 });
 
