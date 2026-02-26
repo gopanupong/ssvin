@@ -16,12 +16,8 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
-const upload = multer({ dest: "uploads/" });
-
-// Ensure uploads directory exists
-if (!fs.existsSync("uploads")) {
-  fs.mkdirSync("uploads");
-}
+// Use /tmp for Vercel compatibility as it's the only writable directory
+const upload = multer({ dest: "/tmp" });
 
 // Database Client
 const dbClient = new Client({
