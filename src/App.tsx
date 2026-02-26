@@ -111,29 +111,33 @@ const LoginPage = ({ onLogin }: { onLogin: (id: string) => void }) => {
 };
 
 const SelectionPage = ({ onSelect, onLogout }: { onSelect: (sub: typeof SUBSTATIONS[0]) => void; onLogout: () => void }) => {
-  const [nearest, setNearest] = useState<typeof SUBSTATIONS[0] | null>(null);
+  const [sortedSubstations, setSortedSubstations] = useState<(typeof SUBSTATIONS[0] & { distance?: number })[]>(SUBSTATIONS);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
-        let minDest = Infinity;
-        let closest = SUBSTATIONS[0];
         
-        SUBSTATIONS.forEach(sub => {
+        const withDistance = SUBSTATIONS.map(sub => {
+          // Simple Euclidean distance for sorting
           const d = Math.sqrt(Math.pow(sub.lat - latitude, 2) + Math.pow(sub.lng - longitude, 2));
-          if (d < minDest) {
-            minDest = d;
-            closest = sub;
-          }
+          // Approximate distance in km (1 degree is roughly 111km)
+          const km = d * 111;
+          return { ...sub, distance: km };
         });
-        setNearest(closest);
+
+        const sorted = [...withDistance].sort((a, b) => (a.distance || 0) - (b.distance || 0));
+        setSortedSubstations(sorted);
         setLoading(false);
       },
       () => setLoading(false)
     );
   }, []);
+
+  const nearbySubstations = sortedSubstations.filter(sub => sub.distance !== undefined && sub.distance <= 10);
+  const displayNearby = nearbySubstations.length > 0 ? nearbySubstations : sortedSubstations.slice(0, 3);
+  const otherSubstations = sortedSubstations.filter(sub => !displayNearby.find(n => n.id === sub.id));
 
   return (
     <div className="min-h-screen bg-violet-50 p-6 pb-24">
@@ -145,30 +149,38 @@ const SelectionPage = ({ onSelect, onLogout }: { onSelect: (sub: typeof SUBSTATI
           </button>
         </div>
 
-        {nearest && (
-          <div className="mb-8">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">สถานีที่ใกล้คุณที่สุด</p>
-            <motion.div 
-              whileTap={{ scale: 0.98 }}
-              onClick={() => onSelect(nearest)}
-              className="bg-violet-600 p-6 rounded-2xl text-white shadow-lg shadow-violet-200 cursor-pointer relative overflow-hidden group"
-            >
-              <div className="relative z-10">
-                <div className="flex items-center gap-2 mb-1">
-                  <MapPin size={16} className="text-violet-200" />
-                  <span className="text-violet-100 text-sm font-medium">ตรวจพบพิกัดปัจจุบัน</span>
+        <div className="mb-8">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">สถานีใกล้เคียงคุณ</p>
+          <div className="space-y-3">
+            {displayNearby.map((sub, idx) => (
+              <motion.div 
+                key={sub.id}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: idx * 0.1 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => onSelect(sub)}
+                className="bg-violet-600 p-5 rounded-2xl text-white shadow-lg shadow-violet-200 cursor-pointer relative overflow-hidden group"
+              >
+                <div className="relative z-10">
+                  <div className="flex items-center gap-2 mb-1">
+                    <MapPin size={14} className="text-violet-200" />
+                    <span className="text-violet-100 text-[10px] font-medium uppercase tracking-wider">
+                      ห่างจากคุณ {sub.distance?.toFixed(1)} กม.
+                    </span>
+                  </div>
+                  <h3 className="text-lg font-bold">{sub.name}</h3>
                 </div>
-                <h3 className="text-2xl font-bold">{nearest.name}</h3>
-              </div>
-              <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 opacity-50 group-hover:opacity-100 transition-opacity" />
-              <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full blur-2xl" />
-            </motion.div>
+                <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 opacity-50 group-hover:opacity-100 transition-opacity" />
+                <div className="absolute -right-2 -bottom-2 w-16 h-16 bg-white/10 rounded-full blur-xl" />
+              </motion.div>
+            ))}
           </div>
-        )}
+        </div>
 
-        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">รายชื่อสถานีทั้งหมด</p>
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">สถานีอื่นๆ</p>
         <div className="space-y-3">
-          {SUBSTATIONS.map((sub) => (
+          {otherSubstations.map((sub) => (
             <div key={sub.id}>
               <Card className="p-0 overflow-hidden">
                 <button 
@@ -177,7 +189,15 @@ const SelectionPage = ({ onSelect, onLogout }: { onSelect: (sub: typeof SUBSTATI
                 >
                   <div>
                     <h4 className="font-bold text-slate-800">{sub.name}</h4>
-                    <p className="text-xs text-slate-500">สถานีไฟฟ้าแรงสูง</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="text-xs text-slate-500">สถานีไฟฟ้าแรงสูง</p>
+                      {sub.distance !== undefined && (
+                        <>
+                          <span className="text-[10px] text-slate-300">•</span>
+                          <p className="text-[10px] font-bold text-violet-600">~ {sub.distance.toFixed(1)} กม.</p>
+                        </>
+                      )}
+                    </div>
                   </div>
                   <ChevronRight size={18} className="text-slate-300" />
                 </button>
