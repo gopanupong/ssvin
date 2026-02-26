@@ -43,30 +43,44 @@ async function initDb() {
   }
 }
 
-// Google Drive Setup
-const SCOPES = ["https://www.googleapis.com/auth/drive.file"];
+// Google Drive & Sheets Setup
+const SCOPES = [
+  "https://www.googleapis.com/auth/drive.file",
+  "https://www.googleapis.com/auth/spreadsheets"
+];
 let drive: any = null;
+let sheets: any = null;
 
-function getDriveService() {
-  if (drive) return drive;
+function getGoogleAuth() {
   const authJson = process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON;
-  if (!authJson) {
-    console.warn("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON not found.");
-    return null;
-  }
+  if (!authJson) return null;
   try {
     const credentials = JSON.parse(authJson);
-    const auth = new google.auth.JWT({
+    return new google.auth.JWT({
       email: credentials.client_email,
       key: credentials.private_key,
       scopes: SCOPES
     });
-    drive = google.drive({ version: "v3", auth });
-    return drive;
   } catch (err) {
-    console.error("Failed to initialize Google Drive service:", err);
+    console.error("Failed to initialize Google Auth:", err);
     return null;
   }
+}
+
+function getDriveService() {
+  if (drive) return drive;
+  const auth = getGoogleAuth();
+  if (!auth) return null;
+  drive = google.drive({ version: "v3", auth });
+  return drive;
+}
+
+function getSheetsService() {
+  if (sheets) return sheets;
+  const auth = getGoogleAuth();
+  if (!auth) return null;
+  sheets = google.sheets({ version: "v4", auth });
+  return sheets;
 }
 
 app.use(express.json());
@@ -140,6 +154,32 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
         "INSERT INTO inspection_logs (employee_id, substation_name, gps_lat, gps_lng, folder_id) VALUES ($1, $2, $3, $4, $5)",
         [employeeId, substationName, lat, lng, folderId]
       );
+    }
+
+    // 4. Log to Google Sheets
+    const sheetsService = getSheetsService();
+    const sheetId = process.env.GOOGLE_SHEET_ID || "1WpvuQnhXzufiBmSRSaEnkRFs9BJf5H4fIWZ0xoYC8iw";
+    if (sheetsService && sheetId) {
+      try {
+        await sheetsService.spreadsheets.values.append({
+          spreadsheetId: sheetId,
+          range: "Sheet1!A:G",
+          valueInputOption: "USER_ENTERED",
+          requestBody: {
+            values: [[
+              new Date(timestamp).toLocaleString("th-TH"),
+              employeeId,
+              substationName,
+              lat,
+              lng,
+              `https://drive.google.com/drive/folders/${folderId}`,
+              "Completed"
+            ]]
+          }
+        });
+      } catch (sheetErr) {
+        console.error("Failed to log to Google Sheets:", sheetErr);
+      }
     }
 
     res.json({ success: true, folderId });

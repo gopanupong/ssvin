@@ -23,7 +23,7 @@ import { th } from 'date-fns/locale';
 
 const Button = ({ className, variant = 'primary', ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'outline' | 'danger' }) => {
   const variants = {
-    primary: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200',
+    primary: 'bg-violet-600 text-white hover:bg-violet-700 shadow-violet-200',
     secondary: 'bg-slate-800 text-white hover:bg-slate-900',
     outline: 'border-2 border-slate-200 text-slate-600 hover:bg-slate-50',
     danger: 'bg-rose-500 text-white hover:bg-rose-600',
@@ -59,14 +59,14 @@ const LoginPage = ({ onLogin }: { onLogin: (id: string) => void }) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
+    <div className="min-h-screen bg-violet-50 flex flex-col items-center justify-center p-6">
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-md text-center"
       >
         <div className="mb-8 flex justify-center">
-          <div className="w-24 h-24 bg-emerald-600 rounded-3xl flex items-center justify-center shadow-xl shadow-emerald-200">
+          <div className="w-24 h-24 bg-violet-600 rounded-3xl flex items-center justify-center shadow-xl shadow-violet-200">
             <ClipboardCheck className="text-white w-12 h-12" />
           </div>
         </div>
@@ -88,7 +88,7 @@ const LoginPage = ({ onLogin }: { onLogin: (id: string) => void }) => {
                 value={id}
                 onChange={(e) => setId(e.target.value.replace(/\D/g, ''))}
                 placeholder="• • • • • •"
-                className="w-full text-center text-3xl tracking-[0.5em] py-4 rounded-xl border-2 border-slate-100 focus:border-emerald-500 focus:ring-0 transition-all font-mono"
+                className="w-full text-center text-3xl tracking-[0.5em] py-4 rounded-xl border-2 border-slate-100 focus:border-violet-500 focus:ring-0 transition-all font-mono"
                 autoFocus
               />
             </div>
@@ -136,7 +136,7 @@ const SelectionPage = ({ onSelect, onLogout }: { onSelect: (sub: typeof SUBSTATI
   }, []);
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 pb-24">
+    <div className="min-h-screen bg-violet-50 p-6 pb-24">
       <div className="max-w-md mx-auto">
         <div className="flex justify-between items-center mb-8">
           <h2 className="text-xl font-bold text-slate-900">เลือกสถานีไฟฟ้า</h2>
@@ -151,12 +151,12 @@ const SelectionPage = ({ onSelect, onLogout }: { onSelect: (sub: typeof SUBSTATI
             <motion.div 
               whileTap={{ scale: 0.98 }}
               onClick={() => onSelect(nearest)}
-              className="bg-emerald-600 p-6 rounded-2xl text-white shadow-lg shadow-emerald-200 cursor-pointer relative overflow-hidden group"
+              className="bg-violet-600 p-6 rounded-2xl text-white shadow-lg shadow-violet-200 cursor-pointer relative overflow-hidden group"
             >
               <div className="relative z-10">
                 <div className="flex items-center gap-2 mb-1">
-                  <MapPin size={16} className="text-emerald-200" />
-                  <span className="text-emerald-100 text-sm font-medium">ตรวจพบพิกัดปัจจุบัน</span>
+                  <MapPin size={16} className="text-violet-200" />
+                  <span className="text-violet-100 text-sm font-medium">ตรวจพบพิกัดปัจจุบัน</span>
                 </div>
                 <h3 className="text-2xl font-bold">{nearest.name}</h3>
               </div>
@@ -270,7 +270,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
   const isReady = photos.building && photos.yard && photos.roof && checklists.length > 0;
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 pb-32">
+    <div className="min-h-screen bg-violet-50 p-6 pb-32">
       <div className="max-w-md mx-auto">
         <div className="flex items-center gap-4 mb-8">
           <button onClick={onBack} className="p-2 -ml-2 text-slate-400 hover:text-slate-900">
@@ -278,7 +278,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
           </button>
           <div>
             <h2 className="text-xl font-bold text-slate-900">{substation.name}</h2>
-            <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider">รายงานประจำเดือน</p>
+            <p className="text-xs font-semibold text-violet-600 uppercase tracking-wider">รายงานประจำเดือน</p>
           </div>
         </div>
 
@@ -295,7 +295,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                   <Card className="p-4 flex items-center gap-4">
                     <div className={cn(
                       "w-12 h-12 rounded-xl flex items-center justify-center transition-colors",
-                      photos[point.id] ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-400"
+                      photos[point.id] ? "bg-violet-100 text-violet-600" : "bg-slate-100 text-slate-400"
                     )}>
                       {photos[point.id] ? <CheckCircle2 size={24} /> : <Camera size={24} />}
                     </div>
@@ -307,7 +307,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                       onClick={() => handleCapture(point.id)}
                       className={cn(
                         "px-4 py-2 rounded-lg text-xs font-bold transition-all",
-                        photos[point.id] ? "bg-slate-100 text-slate-600" : "bg-emerald-600 text-white"
+                        photos[point.id] ? "bg-slate-100 text-slate-600" : "bg-violet-600 text-white"
                       )}
                     >
                       {photos[point.id] ? 'ถ่ายใหม่' : 'ถ่ายภาพ'}
@@ -321,7 +321,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
           <section>
             <div className="flex justify-between items-center mb-3">
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">กระดาษ Check List (A4)</p>
-              <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+              <span className="text-xs font-bold text-violet-600 bg-violet-50 px-2 py-1 rounded-full">
                 {checklists.length} แผ่น
               </span>
             </div>
@@ -339,7 +339,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
               ))}
               <button 
                 onClick={handleAddChecklist}
-                className="aspect-square border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center text-slate-400 hover:border-emerald-500 hover:text-emerald-500 transition-all"
+                className="aspect-square border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center text-slate-400 hover:border-violet-500 hover:text-violet-500 transition-all"
               >
                 <Plus size={24} />
                 <span className="text-[10px] font-bold mt-1">เพิ่มหน้า</span>
@@ -386,7 +386,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
+    <div className="min-h-screen bg-violet-50 p-6">
       <div className="max-w-4xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
@@ -403,8 +403,8 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div key="total">
-            <Card className="bg-emerald-600 text-white border-none shadow-lg shadow-emerald-200">
-              <p className="text-emerald-100 text-xs font-bold uppercase tracking-wider mb-1">ตรวจสอบแล้ว</p>
+            <Card className="bg-violet-600 text-white border-none shadow-lg shadow-violet-200">
+              <p className="text-violet-100 text-xs font-bold uppercase tracking-wider mb-1">ตรวจสอบแล้ว</p>
               <h3 className="text-4xl font-bold">{stats.total} <span className="text-lg font-normal opacity-70">สถานี</span></h3>
             </Card>
           </div>
@@ -425,7 +425,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
         <Card className="p-0 overflow-hidden">
           <div className="p-6 border-bottom border-slate-100 flex justify-between items-center">
             <h4 className="font-bold text-slate-800">ประวัติการตรวจสอบล่าสุด</h4>
-            <button className="text-emerald-600 text-sm font-bold hover:underline">ดูทั้งหมด</button>
+            <button className="text-violet-600 text-sm font-bold hover:underline">ดูทั้งหมด</button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -447,7 +447,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                       {format(new Date(log.timestamp), 'dd/MM/yy HH:mm', { locale: th })}
                     </td>
                     <td className="px-6 py-4">
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase bg-emerald-50 text-emerald-600 px-2 py-1 rounded-full">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase bg-violet-50 text-violet-600 px-2 py-1 rounded-full">
                         <CheckCircle2 size={12} /> เรียบร้อย
                       </span>
                     </td>
@@ -456,7 +456,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                         href={`https://drive.google.com/drive/folders/${log.folder_id}`} 
                         target="_blank" 
                         rel="noreferrer"
-                        className="text-emerald-600 hover:text-emerald-700"
+                        className="text-violet-600 hover:text-violet-700"
                       >
                         <ImageIcon size={18} />
                       </a>
@@ -539,13 +539,13 @@ export default function App() {
         )}
 
         {view === 'success' && (
-          <motion.div key="success" initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="min-h-screen bg-emerald-600 flex flex-col items-center justify-center p-6 text-white text-center">
+          <motion.div key="success" initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="min-h-screen bg-violet-600 flex flex-col items-center justify-center p-6 text-white text-center">
             <div className="w-24 h-24 bg-white/20 rounded-full flex items-center justify-center mb-6">
               <CheckCircle2 size={48} />
             </div>
             <h2 className="text-3xl font-bold mb-2">ส่งรายงานสำเร็จ!</h2>
-            <p className="text-emerald-100 mb-8">ขอบคุณสำหรับการปฏิบัติงานอย่างเคร่งครัด</p>
-            <Button variant="secondary" onClick={() => setView('selection')} className="bg-white text-emerald-700 hover:bg-emerald-50">
+            <p className="text-violet-100 mb-8">ขอบคุณสำหรับการปฏิบัติงานอย่างเคร่งครัด</p>
+            <Button variant="secondary" onClick={() => setView('selection')} className="bg-white text-violet-700 hover:bg-violet-50">
               กลับหน้าหลัก
             </Button>
           </motion.div>
