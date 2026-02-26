@@ -19,31 +19,45 @@ const PORT = 3000;
 // Use /tmp for Vercel compatibility as it's the only writable directory
 const upload = multer({ dest: "/tmp" });
 
-// Database Client
-const dbClient = new Client({
-  connectionString: process.env.DATABASE_URL,
-});
+// Database Client (Lazy initialization to prevent crash on Vercel if URL is missing)
+let dbClient: any = null;
+
+function getDbClient() {
+  if (dbClient) return dbClient;
+  if (!process.env.DATABASE_URL) return null;
+  try {
+    dbClient = new Client({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false }
+    });
+    return dbClient;
+  } catch (err) {
+    console.error("Failed to create DB client:", err);
+    return null;
+  }
+}
 
 async function initDb() {
+  const client = getDbClient();
+  if (!client) {
+    console.warn("DATABASE_URL not found. Database features will be disabled.");
+    return;
+  }
   try {
-    if (process.env.DATABASE_URL) {
-      await dbClient.connect();
-      await dbClient.query(`
-        CREATE TABLE IF NOT EXISTS inspection_logs (
-          id SERIAL PRIMARY KEY,
-          employee_id TEXT NOT NULL,
-          substation_name TEXT NOT NULL,
-          timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          gps_lat DOUBLE PRECISION,
-          gps_lng DOUBLE PRECISION,
-          folder_id TEXT,
-          status TEXT DEFAULT 'completed'
-        );
-      `);
-      console.log("PostgreSQL connected and initialized.");
-    } else {
-      console.warn("DATABASE_URL not found. Database features will be disabled.");
-    }
+    await client.connect();
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS inspection_logs (
+        id SERIAL PRIMARY KEY,
+        employee_id TEXT NOT NULL,
+        substation_name TEXT NOT NULL,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        gps_lat DOUBLE PRECISION,
+        gps_lng DOUBLE PRECISION,
+        folder_id TEXT,
+        status TEXT DEFAULT 'completed'
+      );
+    `);
+    console.log("PostgreSQL connected and initialized.");
   } catch (err) {
     console.error("Failed to connect to database:", err);
   }
@@ -54,10 +68,92 @@ const SCOPES = [
   "https://www.googleapis.com/auth/drive.file",
   "https://www.googleapis.com/auth/spreadsheets"
 ];
+
+// OAuth2 Client Setup
+function getOAuth2Client() {
+  return new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI || `${process.env.APP_URL}/api/auth/google/callback`
+  );
+}
+
+// Route to start OAuth flow
+app.get("/api/auth/google", (req, res) => {
+  try {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      return res.status(400).send(`
+        <div style="font-family: sans-serif; padding: 20px; color: #e11d48; background: #fff1f2; border-radius: 8px; border: 1px solid #ffe4e6; max-width: 500px; margin: 40px auto;">
+          <h3 style="margin-top: 0;">❌ ตั้งค่าไม่ครบถ้วน</h3>
+          <p>กรุณาใส่ <b>GOOGLE_CLIENT_ID</b> และ <b>GOOGLE_CLIENT_SECRET</b> ใน Vercel Environment Variables ก่อนครับ</p>
+          <p style="font-size: 14px; color: #666;">อย่าลืมกด Redeploy หลังจากใส่ค่าแล้วด้วยนะครับ</p>
+        </div>
+      `);
+    }
+
+    const oauth2Client = getOAuth2Client();
+    const url = oauth2Client.generateAuthUrl({
+      access_type: "offline",
+      scope: SCOPES,
+      prompt: "consent"
+    });
+    res.redirect(url);
+  } catch (error: any) {
+    res.status(500).send("OAuth Error: " + error.message);
+  }
+});
+
+// Callback route to show the Refresh Token page (The one in your image)
+app.get("/api/auth/google/callback", async (req, res) => {
+  const { code } = req.query;
+  const oauth2Client = getOAuth2Client();
+  try {
+    const { tokens } = await oauth2Client.getToken(code as string);
+    const refreshToken = tokens.refresh_token;
+
+    if (!refreshToken) {
+      return res.send("Error: No refresh token received. Try removing the app from your Google account and try again.");
+    }
+
+    // This HTML matches the image you provided
+    res.send(`
+      <div style="font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; border: 1px solid #eee; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+        <h2 style="color: #6366f1; display: flex; align-items: center; gap: 10px;">
+          <span style="background: #10b981; color: white; border-radius: 4px; padding: 2px 6px; font-size: 18px;">✓</span> 
+          คัดลอก Refresh Token ของคุณ
+        </h2>
+        <p style="color: #1f2937; font-weight: 500;">นำค่าด้านล่างนี้ไปใส่ใน Vercel Environment Variables ชื่อ</p>
+        <p style="font-weight: 800; font-size: 18px; color: #000;">GOOGLE_REFRESH_TOKEN</p>
+        
+        <textarea readonly style="width: 100%; height: 120px; padding: 15px; border-radius: 8px; border: 1px solid #ddd; background: #f9fafb; font-family: monospace; font-size: 14px; margin: 20px 0; resize: none;">${refreshToken}</textarea>
+        
+        <div style="background: #fff1f2; padding: 15px; border-radius: 8px; border: 1px solid #ffe4e6; color: #e11d48; font-weight: 600; text-align: center;">
+          ขั้นตอนสุดท้าย: เมื่อใส่ค่าใน Vercel แล้ว อย่าลืมกด <span style="color: #f43f5e;">Redeploy</span> เพื่อให้ระบบเริ่มทำงานนะครับ
+        </div>
+      </div>
+    `);
+  } catch (error: any) {
+    res.status(500).send("Auth Failed: " + error.message);
+  }
+});
+
 let drive: any = null;
 let sheets: any = null;
 
 function getGoogleAuth() {
+  // Priority 1: OAuth2 Refresh Token
+  if (process.env.GOOGLE_REFRESH_TOKEN) {
+    const oauth2Client = getOAuth2Client();
+    oauth2Client.setCredentials({
+      refresh_token: process.env.GOOGLE_REFRESH_TOKEN
+    });
+    return oauth2Client;
+  }
+
+  // Priority 2: Service Account
   const authJson = process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON;
   if (!authJson) return null;
   try {
@@ -159,11 +255,16 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
     }
 
     // 3. Log to Database
-    if (process.env.DATABASE_URL) {
-      await dbClient.query(
-        "INSERT INTO inspection_logs (employee_id, substation_name, gps_lat, gps_lng, folder_id) VALUES ($1, $2, $3, $4, $5)",
-        [employeeId, substationName, lat, lng, folderId]
-      );
+    const client = getDbClient();
+    if (client) {
+      try {
+        await client.query(
+          "INSERT INTO inspection_logs (employee_id, substation_name, gps_lat, gps_lng, folder_id) VALUES ($1, $2, $3, $4, $5)",
+          [employeeId, substationName, lat, lng, folderId]
+        );
+      } catch (dbErr) {
+        console.error("DB Log failed:", dbErr);
+      }
     }
 
     // 4. Log to Google Sheets
@@ -200,7 +301,8 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
 });
 
 app.get("/api/dashboard-stats", async (req, res) => {
-  if (!process.env.DATABASE_URL) {
+  const client = getDbClient();
+  if (!client) {
     return res.json({
       total: 0,
       recent: [],
@@ -208,7 +310,7 @@ app.get("/api/dashboard-stats", async (req, res) => {
     });
   }
   try {
-    const result = await dbClient.query("SELECT * FROM inspection_logs ORDER BY timestamp DESC LIMIT 50");
+    const result = await client.query("SELECT * FROM inspection_logs ORDER BY timestamp DESC LIMIT 50");
     res.json({
       total: result.rowCount,
       recent: result.rows,
