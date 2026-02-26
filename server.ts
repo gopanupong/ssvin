@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import multer from "multer";
 import { google } from "googleapis";
 import { Client } from "pg";
@@ -71,24 +70,39 @@ const SCOPES = [
 
 // OAuth2 Client Setup
 function getOAuth2Client() {
+  const appUrl = (process.env.APP_URL || '').replace(/\/$/, '');
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${appUrl}/api/auth/google/callback`;
+  
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    console.error("Missing Google Client ID or Secret");
+  }
+  
   return new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI || `${process.env.APP_URL}/api/auth/google/callback`
+    redirectUri
   );
 }
 
 // Route to start OAuth flow
 app.get("/api/auth/google", (req, res) => {
+  console.log("Starting Google OAuth flow...");
   try {
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const appUrl = process.env.APP_URL;
 
-    if (!clientId || !clientSecret) {
+    if (!clientId || !clientSecret || !appUrl) {
+      console.error("Missing required environment variables for OAuth");
       return res.status(400).send(`
         <div style="font-family: sans-serif; padding: 20px; color: #e11d48; background: #fff1f2; border-radius: 8px; border: 1px solid #ffe4e6; max-width: 500px; margin: 40px auto;">
           <h3 style="margin-top: 0;">❌ ตั้งค่าไม่ครบถ้วน</h3>
-          <p>กรุณาใส่ <b>GOOGLE_CLIENT_ID</b> และ <b>GOOGLE_CLIENT_SECRET</b> ใน Vercel Environment Variables ก่อนครับ</p>
+          <p>กรุณาตรวจสอบว่าได้ใส่ค่าเหล่านี้ใน Vercel Environment Variables หรือยัง:</p>
+          <ul>
+            <li><b>GOOGLE_CLIENT_ID</b>: ${clientId ? '✅' : '❌'}</li>
+            <li><b>GOOGLE_CLIENT_SECRET</b>: ${clientSecret ? '✅' : '❌'}</li>
+            <li><b>APP_URL</b>: ${appUrl ? '✅' : '❌'}</li>
+          </ul>
           <p style="font-size: 14px; color: #666;">อย่าลืมกด Redeploy หลังจากใส่ค่าแล้วด้วยนะครับ</p>
         </div>
       `);
@@ -100,8 +114,10 @@ app.get("/api/auth/google", (req, res) => {
       scope: SCOPES,
       prompt: "consent"
     });
+    console.log("Redirecting to Google Auth URL...");
     res.redirect(url);
   } catch (error: any) {
+    console.error("OAuth Error Catch:", error);
     res.status(500).send("OAuth Error: " + error.message);
   }
 });
@@ -330,6 +346,7 @@ async function startServer() {
   }
 
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
