@@ -96,6 +96,10 @@ function getSheetsService() {
 app.use(express.json());
 
 // API Routes
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", message: "SSVI API is running" });
+});
+
 app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res: any) => {
   const { employeeId, substationName, lat, lng, timestamp } = req.body;
   const files = req.files as any[];
@@ -218,8 +222,14 @@ app.get("/api/dashboard-stats", async (req, res) => {
   }
 });
 
+export default app;
+
 async function startServer() {
-  await initDb();
+  try {
+    await initDb();
+  } catch (e) {
+    console.error("DB Init failed:", e);
+  }
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -227,16 +237,29 @@ async function startServer() {
       appType: "spa",
     });
     app.use(vite.middlewares);
+    
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
   } else {
     app.use(express.static(path.join(__dirname, "dist")));
     app.get("*", (req, res) => {
+      // Don't handle API routes here
+      if (req.path.startsWith('/api')) return;
       res.sendFile(path.join(__dirname, "dist", "index.html"));
     });
-  }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+    // Only listen if explicitly told to (e.g., Docker), but NOT on Vercel
+    if (process.env.RUN_SERVER === "true") {
+      app.listen(PORT, "0.0.0.0", () => {
+        console.log(`Server running on port ${PORT}`);
+      });
+    }
+  }
 }
 
-startServer();
+// Only run startServer if not on Vercel or in dev
+if (process.env.NODE_ENV !== "production" || process.env.RUN_SERVER === "true") {
+  startServer();
+}
+
