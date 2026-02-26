@@ -423,7 +423,10 @@ app.get("/api/dashboard-stats", async (req, res) => {
       const minute = parseInt(timeParts[1]) || 0;
       const second = parseInt(timeParts[2]) || 0;
 
-      const logDate = new Date(yearVal, monthIdx, day, hour, minute, second);
+      // Construct ISO string with +07:00 offset to ensure correct parsing regardless of server local time
+      const isoStr = `${yearVal}-${String(monthIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}+07:00`;
+      const logDate = new Date(isoStr);
+      
       if (isNaN(logDate.getTime())) return null;
       
       // Check if it matches the filter
