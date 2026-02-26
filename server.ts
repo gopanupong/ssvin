@@ -211,22 +211,30 @@ app.get("/api/health", (req, res) => {
 
 app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res: any) => {
   const { employeeId, substationName, lat, lng, timestamp } = req.body;
+  
+  // Debug log to see what's coming in
+  console.log("New Inspection Submission:");
+  console.log("- Employee ID:", employeeId);
+  console.log("- Substation:", substationName);
+  console.log("- Timestamp:", timestamp);
+
   const files = req.files as any[];
   const driveService = getDriveService();
 
   if (!driveService) {
+    console.error("Google Drive Service is NULL");
     return res.status(500).json({ error: "Google Drive service not configured" });
   }
 
   try {
-    const dateStr = new Date(timestamp).toLocaleDateString("th-TH", {
+    // Ensure we have a valid date
+    const dateObj = timestamp ? new Date(timestamp) : new Date();
+    const dateStr = dateObj.toLocaleDateString("th-TH", {
       day: "2-digit",
       month: "2-digit",
       year: "2-digit",
-    }).replace(/\//g, ""); // DDMMYY format (roughly)
+    }).replace(/\//g, ""); 
     
-    // Better date format for folder: สามชุก_300169 (as requested)
-    // Local time is 2026-02-25
     const folderName = `${substationName}_${dateStr}`;
     const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || "1IzXUWJfucyb47Dr32QSVIxBKmoMrWF6J";
 
@@ -275,7 +283,7 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
       try {
         await client.query(
           "INSERT INTO inspection_logs (employee_id, substation_name, gps_lat, gps_lng, folder_id) VALUES ($1, $2, $3, $4, $5)",
-          [employeeId, substationName, lat, lng, folderId]
+          [employeeId || "Unknown", substationName, lat, lng, folderId]
         );
       } catch (dbErr) {
         console.error("DB Log failed:", dbErr);
@@ -287,20 +295,25 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
     const sheetId = process.env.GOOGLE_SHEET_ID || "1WpvuQnhXzufiBmSRSaEnkRFs9BJf5H4fIWZ0xoYC8iw";
     if (sheetsService && sheetId) {
       try {
+        // Use the first sheet (usually 'Sheet1')
+        const rowData = [
+          dateObj.toLocaleString("th-TH"),
+          employeeId || "ไม่ระบุ", // Ensure it's not empty
+          substationName,
+          lat,
+          lng,
+          `https://drive.google.com/drive/folders/${folderId}`,
+          "Completed"
+        ];
+        
+        console.log("Appending to Google Sheet:", rowData);
+
         await sheetsService.spreadsheets.values.append({
           spreadsheetId: sheetId,
           range: "Sheet1!A:G",
           valueInputOption: "USER_ENTERED",
           requestBody: {
-            values: [[
-              new Date(timestamp).toLocaleString("th-TH"),
-              employeeId,
-              substationName,
-              lat,
-              lng,
-              `https://drive.google.com/drive/folders/${folderId}`,
-              "Completed"
-            ]]
+            values: [rowData]
           }
         });
       } catch (sheetErr) {

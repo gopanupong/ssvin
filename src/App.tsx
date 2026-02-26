@@ -273,19 +273,71 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
         useWebWorker: true
       };
 
+      // Helper to add timestamp to image
+      const addTimestampToImage = (file: File): Promise<Blob> => {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.width;
+              canvas.height = img.height;
+              const ctx = canvas.getContext('2d');
+              if (!ctx) return reject('Could not get canvas context');
+
+              // Draw original image
+              ctx.drawImage(img, 0, 0);
+
+              // Setup text style
+              const fontSize = Math.max(20, Math.floor(canvas.width / 40));
+              ctx.font = `bold ${fontSize}px sans-serif`;
+              const timestamp = format(new Date(), 'dd/MM/yyyy HH:mm', { locale: th });
+              
+              // Measure text for background/position
+              const textWidth = ctx.measureText(timestamp).width;
+              const x = canvas.width - textWidth - 20;
+              const y = canvas.height - 20;
+
+              // Draw text shadow/outline for readability
+              ctx.strokeStyle = 'black';
+              ctx.lineWidth = 4;
+              ctx.strokeText(timestamp, x, y);
+              
+              // Draw white text
+              ctx.fillStyle = 'white';
+              ctx.fillText(timestamp, x, y);
+
+              canvas.toBlob((blob) => {
+                if (blob) resolve(blob);
+                else reject('Canvas to Blob failed');
+              }, 'image/jpeg', 0.9);
+            };
+            img.src = event.target?.result as string;
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      };
+
       // Helper to compress and append
       const appendCompressed = async (file: File, name: string) => {
         try {
-          const compressed = await imageCompression(file, compressionOptions);
+          // 1. Add Timestamp
+          const timestampedBlob = await addTimestampToImage(file);
+          const timestampedFile = new File([timestampedBlob], name, { type: 'image/jpeg' });
+          
+          // 2. Compress
+          const compressed = await imageCompression(timestampedFile, compressionOptions);
           formData.append('photos', compressed, name);
         } catch (e) {
-          console.error("Compression failed, using original", e);
+          console.error("Processing failed, using original", e);
           formData.append('photos', file, name);
         }
       };
 
       // Append Fixed-Point photos
-      for (const [key, files] of Object.entries(photos)) {
+      for (const [key, files] of Object.entries(photos) as [string, File[]][]) {
         for (let i = 0; i < files.length; i++) {
           await appendCompressed(files[i], `${key}_${i + 1}.jpg`);
         }
