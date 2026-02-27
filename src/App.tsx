@@ -694,7 +694,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
         <div className="absolute inset-0 bg-white/50 backdrop-blur-[2px] z-50 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3">
             <Loader2 className="animate-spin text-violet-600" size={40} />
-            <p className="text-sm font-bold text-violet-600">กำลังดึงข้อมูลจาก Google Sheets...</p>
+            <p className="text-sm font-bold text-violet-600">...กำลังโหลดข้อมูล...</p>
           </div>
         </div>
       )}
