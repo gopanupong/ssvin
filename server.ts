@@ -455,15 +455,17 @@ app.get("/api/dashboard-stats", async (req, res) => {
       
       // Extract categories - handle both old (comma-separated in col H) and new (checkmarks in cols H-Q)
       let categories: string[] = [];
-      const colH = row[7] || "";
       
-      // If col H is exactly a checkmark, it's the new format
-      if (colH === "✓") {
+      // Heuristic to detect new format: check if any of the columns from index 7 to 16 contain the checkmark
+      const hasCheckmark = row.slice(7, 17).some(val => val === "✓");
+      
+      if (hasCheckmark) {
         REQUIRED_CATEGORIES.forEach((cat, i) => {
           if (row[7 + i] === "✓") categories.push(cat);
         });
       } else {
-        // Otherwise assume it's the old comma-separated format
+        // Fallback to old comma-separated format in column H
+        const colH = row[7] || "";
         categories = colH.split(',').filter(Boolean);
       }
 
