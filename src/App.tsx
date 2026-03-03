@@ -452,23 +452,26 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
               const tsX = canvas.width - tsWidth - 20;
               const tsY = canvas.height - 20;
 
-              ctx.strokeStyle = 'black';
-              ctx.lineWidth = 4;
-              ctx.strokeText(timestamp, tsX, tsY);
-              ctx.fillStyle = 'white';
-              ctx.fillText(timestamp, tsX, tsY);
-
-              // Draw Comment (Bottom Left) if exists
+              // Draw Comment (Above Timestamp) if exists
               if (comment) {
-                const commentText = `หมายเหตุ: ${comment}`;
-                const cX = 20;
-                const cY = canvas.height - 20;
+                const commentText = comment;
+                const cWidth = ctx.measureText(commentText).width;
+                const cX = canvas.width - cWidth - 20;
+                const cY = tsY - fontSize - 8; // Position above timestamp with a small gap
+
                 ctx.strokeStyle = 'black';
                 ctx.lineWidth = 4;
                 ctx.strokeText(commentText, cX, cY);
                 ctx.fillStyle = '#fde047'; // Yellow for comment
                 ctx.fillText(commentText, cX, cY);
               }
+
+              // Draw Timestamp
+              ctx.strokeStyle = 'black';
+              ctx.lineWidth = 4;
+              ctx.strokeText(timestamp, tsX, tsY);
+              ctx.fillStyle = 'white';
+              ctx.fillText(timestamp, tsX, tsY);
 
               canvas.toBlob((blob) => {
                 if (blob) resolve(blob);

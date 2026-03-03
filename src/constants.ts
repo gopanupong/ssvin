@@ -102,4 +102,5 @@ export interface InspectionLog {
   gps_lng: number;
   folder_id: string;
   status: string;
+  categories?: string[];
 }
