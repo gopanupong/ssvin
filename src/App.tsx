@@ -870,6 +870,75 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
           </div>
         </div>
 
+        {/* Substation Progress Summary */}
+        <Card className="mb-8 p-0 overflow-hidden">
+          <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+            <h4 className="font-bold text-slate-800 uppercase tracking-wider text-sm">สรุปความคืบหน้ารายสถานี</h4>
+            <span className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">เดือน{months[selectedMonth].label} {selectedYear + 543}</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 text-slate-400 text-[10px] font-bold uppercase tracking-widest">
+                  <th className="px-6 py-3">สถานีไฟฟ้า</th>
+                  <th className="px-6 py-3">ความคืบหน้า</th>
+                  <th className="px-6 py-3">สถานะ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {SUBSTATIONS.map(sub => {
+                  const name = (sub.name || "").trim();
+                  const cats = substationCompletionMap.get(name) || new Set();
+                  const progress = cats.size;
+                  const isDone = progress >= REQUIRED_CATEGORIES.length;
+                  
+                  // Only show stations that have at least one log in the current month
+                  if (progress === 0 && !stats.recent.some(l => (l.substation_name || "").trim() === name)) return null;
+
+                  return (
+                    <tr key={sub.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-6 py-4 font-bold text-slate-800 text-sm">{sub.name}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden min-w-[100px]">
+                            <motion.div 
+                              initial={{ width: 0 }}
+                              animate={{ width: `${(progress / REQUIRED_CATEGORIES.length) * 100}%` }}
+                              className={cn(
+                                "h-full rounded-full",
+                                isDone ? "bg-emerald-500" : "bg-violet-500"
+                              )}
+                            />
+                          </div>
+                          <span className="text-xs font-bold text-slate-500">{progress}/{REQUIRED_CATEGORIES.length}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={cn(
+                          "text-[10px] font-bold px-2 py-1 rounded-full uppercase",
+                          isDone ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"
+                        )}>
+                          {isDone ? "เรียบร้อย" : "กำลังดำเนินการ"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {SUBSTATIONS.every(sub => {
+                  const name = (sub.name || "").trim();
+                  return !substationCompletionMap.has(name) && !stats.recent.some(l => (l.substation_name || "").trim() === name);
+                }) && (
+                  <tr>
+                    <td colSpan={3} className="px-6 py-12 text-center text-slate-400 italic text-sm">
+                      ยังไม่มีข้อมูลการตรวจสอบในเดือนนี้
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
         <Card className="p-0 overflow-hidden">
           <div className="p-6 border-bottom border-slate-100 flex justify-between items-center">
             <h4 className="font-bold text-slate-800">ประวัติการตรวจสอบ ({months[selectedMonth].label} {selectedYear + 543})</h4>

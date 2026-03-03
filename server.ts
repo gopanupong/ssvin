@@ -413,28 +413,29 @@ app.get("/api/dashboard-stats", async (req, res) => {
 
     const filteredLogs = rows.map((row, index) => {
       // Row structure: [Timestamp, EmployeeID, SubstationName, Lat, Lng, FolderURL, Status]
-      const timestampStr = row[0] || "";
-      if (!timestampStr) return null;
+      const dateStr = (row[0] || "").toString().trim();
+      if (!dateStr) return null;
 
-      // Parse "DD/MM/YYYY HH:mm:ss" or "DD/MM/YYYY HH:mm"
-      const parts = timestampStr.split(" ");
-      const dateParts = parts[0].split("/");
-      const timeParts = parts[1] ? parts[1].split(":") : [0, 0, 0];
+      // Robust parsing for dates like "03/03/2569 21:38:00" or "03/03/26 21:38"
+      const parts = dateStr.split(/[\s/:]+/);
+      if (parts.length < 3) return null;
       
-      if (dateParts.length < 3) return null;
+      const day = parseInt(parts[0]);
+      const monthIdx = parseInt(parts[1]) - 1;
+      let yearVal = parseInt(parts[2]);
 
-      const day = parseInt(dateParts[0]);
-      const monthIdx = parseInt(dateParts[1]) - 1;
-      let yearVal = parseInt(dateParts[2]);
-
-      // Convert BE to AD if necessary (e.g. 2569 -> 2026)
+      if (yearVal < 100) {
+        // Handle 2-digit years
+        if (yearVal > 50) yearVal += 2500;
+        else yearVal += 2000;
+      }
       if (yearVal > 2500) yearVal -= 543;
 
-      const hour = parseInt(timeParts[0]) || 0;
-      const minute = parseInt(timeParts[1]) || 0;
-      const second = parseInt(timeParts[2]) || 0;
+      const hour = parseInt(parts[3]) || 0;
+      const minute = parseInt(parts[4]) || 0;
+      const second = parseInt(parts[5]) || 0;
 
-      // Construct ISO string with +07:00 offset to ensure correct parsing regardless of server local time
+      // Construct ISO string with +07:00 offset
       const isoStr = `${yearVal}-${String(monthIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}+07:00`;
       const logDate = new Date(isoStr);
       
@@ -447,7 +448,6 @@ app.get("/api/dashboard-stats", async (req, res) => {
         }
       }
 
-      // Extract folder ID from URL: https://drive.google.com/drive/folders/ID
       const folderUrl = row[5] || "";
       const folderId = folderUrl.split("/").pop() || "";
 
@@ -455,18 +455,27 @@ app.get("/api/dashboard-stats", async (req, res) => {
       
       // Extract categories - handle both old (comma-separated in col H) and new (checkmarks in cols H-Q)
       let categories: string[] = [];
+      const colH = (row[7] || "").toString().trim();
       
-      // Heuristic to detect new format: check if any of the columns from index 7 to 16 contain the checkmark
-      const hasCheckmark = row.slice(7, 17).some(val => val === "✓");
+      // Check for checkmarks in columns H through Q (indices 7 to 16)
+      const hasCheckmark = row.slice(7, 17).some(val => val && val.toString().trim() === "✓");
       
       if (hasCheckmark) {
         REQUIRED_CATEGORIES.forEach((cat, i) => {
-          if (row[7 + i] === "✓") categories.push(cat);
+          const cellVal = (row[7 + i] || "").toString().trim();
+          if (cellVal === "✓" || cellVal === "✔") {
+            categories.push(cat);
+          }
         });
-      } else {
-        // Fallback to old comma-separated format in column H
-        const colH = row[7] || "";
-        categories = colH.split(',').filter(Boolean);
+      } else if (colH.includes(',')) {
+        // Fallback to old comma-separated format
+        categories = colH.split(',').map(s => s.trim()).filter(Boolean);
+      } else if (colH) {
+        // Single category or old format with 1 item
+        const possibleCat = colH.toLowerCase();
+        if (REQUIRED_CATEGORIES.includes(possibleCat)) {
+          categories.push(possibleCat);
+        }
       }
 
       const logEntry = {
