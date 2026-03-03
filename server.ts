@@ -450,7 +450,7 @@ app.get("/api/dashboard-stats", async (req, res) => {
       return {
         id: index,
         employee_id: row[1] || "Unknown",
-        substation_name: row[2] || "Unknown",
+        substation_name: (row[2] || "").trim() || "Unknown",
         timestamp: logDate.toISOString(),
         gps_lat: parseFloat(row[3]) || 0,
         gps_lng: parseFloat(row[4]) || 0,
@@ -464,17 +464,18 @@ app.get("/api/dashboard-stats", async (req, res) => {
     filteredLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     // Count unique substations that are "Complete"
-    // A substation is complete if it has all 9 categories covered in the month
-    const REQUIRED_CATEGORIES = ['building', 'yard', 'roof', 'annunciation', 'battery', 'grounding', 'security', 'fence', 'lighting'];
+    // A substation is complete if it has all required categories covered in the month
+    const REQUIRED_CATEGORIES = ['building', 'yard', 'roof', 'annunciation', 'battery', 'grounding', 'security', 'fence', 'lighting', 'checklist'];
     
     const substationCompletion = new Map<string, Set<string>>();
     filteredLogs.forEach(log => {
-      if (!substationCompletion.has(log.substation_name)) {
-        substationCompletion.set(log.substation_name, new Set());
+      const name = (log.substation_name || "").trim();
+      if (!substationCompletion.has(name)) {
+        substationCompletion.set(name, new Set());
       }
-      log.categories.forEach((cat: string) => {
+      (log.categories || []).forEach((cat: string) => {
         if (REQUIRED_CATEGORIES.includes(cat)) {
-          substationCompletion.get(log.substation_name)?.add(cat);
+          substationCompletion.get(name)?.add(cat);
         }
       });
     });

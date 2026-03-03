@@ -59,6 +59,7 @@ const CATEGORY_LABELS: {[key: string]: string} = {
   security: 'รปภ.',
   fence: 'รั้วสถานี',
   lighting: 'ระบบแสงสว่าง',
+  checklist: 'Check List',
 };
 
 const LoginPage = ({ onLogin }: { onLogin: (id: string) => void }) => {
@@ -747,31 +748,34 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
       });
   }, [selectedMonth, selectedYear]);
 
-  const REQUIRED_CATEGORIES = ['building', 'yard', 'roof', 'annunciation', 'battery', 'grounding', 'security', 'fence', 'lighting'];
+  const REQUIRED_CATEGORIES = ['building', 'yard', 'roof', 'annunciation', 'battery', 'grounding', 'security', 'fence', 'lighting', 'checklist'];
 
   const substationCompletionMap = new Map<string, Set<string>>();
   stats.recent.forEach(log => {
-    if (!substationCompletionMap.has(log.substation_name)) {
-      substationCompletionMap.set(log.substation_name, new Set());
+    const name = (log.substation_name || "").trim();
+    if (!substationCompletionMap.has(name)) {
+      substationCompletionMap.set(name, new Set());
     }
     (log.categories || []).forEach(cat => {
       if (REQUIRED_CATEGORIES.includes(cat)) {
-        substationCompletionMap.get(log.substation_name)?.add(cat);
+        substationCompletionMap.get(name)?.add(cat);
       }
     });
   });
 
   const pendingSubstations = SUBSTATIONS.filter(sub => {
-    const cats = substationCompletionMap.get(sub.name);
+    const name = (sub.name || "").trim();
+    const cats = substationCompletionMap.get(name);
     return !cats || cats.size < REQUIRED_CATEGORIES.length;
   });
 
   const inspectedSubstations = SUBSTATIONS.filter(sub => {
-    const cats = substationCompletionMap.get(sub.name);
+    const name = (sub.name || "").trim();
+    const cats = substationCompletionMap.get(name);
     return cats && cats.size >= REQUIRED_CATEGORIES.length;
   }).map(sub => {
     // Find the latest inspection for this sub
-    const latestLog = stats.recent.find(log => log.substation_name === sub.name);
+    const latestLog = stats.recent.find(log => (log.substation_name || "").trim() === (sub.name || "").trim());
     return { ...sub, latestLog };
   });
 
