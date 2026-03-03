@@ -356,7 +356,7 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
         const dateTimeStr = formatter.format(dateObj);
 
         const REQUIRED_CATEGORIES = ['building', 'yard', 'roof', 'annunciation', 'battery', 'grounding', 'security', 'fence', 'lighting', 'checklist'];
-        const categoryChecks = REQUIRED_CATEGORIES.map(cat => categoriesStr.split(',').includes(cat) ? "✓" : "");
+        const categoryChecks = REQUIRED_CATEGORIES.map(cat => categoriesStr.split(',').includes(cat) ? "1" : "0");
 
         const rowData = [
           dateTimeStr,
@@ -404,7 +404,7 @@ app.get("/api/dashboard-stats", async (req, res) => {
   try {
     const response = await sheetsService.spreadsheets.values.get({
       spreadsheetId: sheetId,
-      range: "A2:G", // Fetch from the first sheet
+      range: "A2:Q", // Fetch all columns including categories (A to Q)
     });
 
     const rows = response.data.values || [];
@@ -453,17 +453,20 @@ app.get("/api/dashboard-stats", async (req, res) => {
 
       const REQUIRED_CATEGORIES = ['building', 'yard', 'roof', 'annunciation', 'battery', 'grounding', 'security', 'fence', 'lighting', 'checklist'];
       
-      // Extract categories - handle both old (comma-separated in col H) and new (checkmarks in cols H-Q)
+      // Extract categories - handle old (comma-separated), checkmarks, and new (1/0) formats
       let categories: string[] = [];
       const colH = (row[7] || "").toString().trim();
       
-      // Check for checkmarks in columns H through Q (indices 7 to 16)
-      const hasCheckmark = row.slice(7, 17).some(val => val && val.toString().trim() === "✓");
+      // Check for 1/0 or checkmarks in columns H through Q (indices 7 to 16)
+      const hasNewFormat = row.slice(7, 17).some(val => {
+        const v = val ? val.toString().trim() : "";
+        return v === "1" || v === "0" || v === "✓" || v === "✔";
+      });
       
-      if (hasCheckmark) {
+      if (hasNewFormat) {
         REQUIRED_CATEGORIES.forEach((cat, i) => {
           const cellVal = (row[7 + i] || "").toString().trim();
-          if (cellVal === "✓" || cellVal === "✔") {
+          if (cellVal === "1" || cellVal === "✓" || cellVal === "✔") {
             categories.push(cat);
           }
         });
