@@ -888,9 +888,33 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                       {format(new Date(log.timestamp), 'dd/MM/yy HH:mm', { locale: th })}
                     </td>
                     <td className="px-6 py-4">
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase bg-violet-50 text-violet-600 px-2 py-1 rounded-full">
-                        <CheckCircle2 size={12} /> เรียบร้อย
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className={cn(
+                            "inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-1 rounded-full",
+                            (log.categories?.length || 0) >= REQUIRED_CATEGORIES.length 
+                              ? "bg-emerald-50 text-emerald-600" 
+                              : "bg-amber-50 text-amber-600"
+                          )}>
+                            <CheckCircle2 size={12} /> {(log.categories?.length || 0) >= REQUIRED_CATEGORIES.length ? 'เรียบร้อย' : 'กำลังดำเนินการ'}
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-400">
+                            ({log.categories?.length || 0}/{REQUIRED_CATEGORIES.length})
+                          </span>
+                        </div>
+                        {log.categories && log.categories.length < REQUIRED_CATEGORIES.length && (
+                          <div className="flex flex-wrap gap-1 max-w-[150px]">
+                            {REQUIRED_CATEGORIES.filter(cat => !log.categories.includes(cat)).slice(0, 2).map(cat => (
+                              <span key={cat} className="text-[7px] text-slate-400 bg-slate-100 px-1 rounded">
+                                {CATEGORY_LABELS[cat] || cat}
+                              </span>
+                            ))}
+                            {REQUIRED_CATEGORIES.length - log.categories.length > 2 && (
+                              <span className="text-[7px] text-slate-400 italic">...</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <a 

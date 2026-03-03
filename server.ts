@@ -447,7 +447,7 @@ app.get("/api/dashboard-stats", async (req, res) => {
       const folderUrl = row[5] || "";
       const folderId = folderUrl.split("/").pop() || "";
 
-      return {
+      const logEntry = {
         id: index,
         employee_id: row[1] || "Unknown",
         substation_name: (row[2] || "").trim() || "Unknown",
@@ -458,6 +458,8 @@ app.get("/api/dashboard-stats", async (req, res) => {
         status: row[6] || "completed",
         categories: (row[7] || "").split(',').filter(Boolean)
       };
+      console.log(`Log entry ${index}: ${logEntry.substation_name}, categories: ${logEntry.categories.join(',')}`);
+      return logEntry;
     }).filter(log => log !== null) as any[];
 
     // Sort by timestamp descending
