@@ -290,7 +290,7 @@ const SelectionPage = ({ onSelect, onLogout }: { onSelect: (sub: typeof SUBSTATI
 };
 
 const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substation: typeof SUBSTATIONS[0]; employeeId: string; onBack: () => void; onComplete: () => void }) => {
-  const [photos, setPhotos] = useState<{ [key: string]: File[] }>({
+  const [photos, setPhotos] = useState<{ [key: string]: { file: File; comment: string }[] }>({
     building: [],
     yard: [],
     roof: [],
@@ -307,6 +307,9 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
   const [status, setStatus] = useState<string>('');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const activeCategory = useRef<string | null>(null);
 
   const getGeoLocation = () => {
     if (!navigator.geolocation) {
@@ -337,17 +340,29 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
   }, []);
 
   const handleCapture = (key: string) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.capture = 'environment';
-    input.onchange = (e: any) => {
-      const file = e.target.files[0];
-      if (file) {
-        setPhotos(prev => ({ ...prev, [key]: [...prev[key], file] }));
-      }
-    };
-    input.click();
+    activeCategory.current = key;
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  };
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const key = activeCategory.current;
+    if (file && key) {
+      setPhotos(prev => ({ ...prev, [key]: [...prev[key], { file, comment: '' }] }));
+    }
+    activeCategory.current = null;
+  };
+
+  const handleCommentChange = (key: string, index: number, comment: string) => {
+    setPhotos(prev => {
+      const newPhotos = { ...prev };
+      newPhotos[key] = [...newPhotos[key]];
+      newPhotos[key][index] = { ...newPhotos[key][index], comment };
+      return newPhotos;
+    });
   };
 
   const handleAddChecklist = () => {
@@ -412,7 +427,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
       };
 
       // Helper to add timestamp to image
-      const addTimestampToImage = (file: File): Promise<Blob> => {
+      const addTimestampToImage = (file: File, comment: string): Promise<Blob> => {
         return new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = (event) => {
@@ -432,19 +447,28 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
               ctx.font = `bold ${fontSize}px sans-serif`;
               const timestamp = format(new Date(), 'dd/MM/yyyy HH:mm:ss', { locale: th });
               
-              // Measure text for background/position
-              const textWidth = ctx.measureText(timestamp).width;
-              const x = canvas.width - textWidth - 20;
-              const y = canvas.height - 20;
+              // Draw Timestamp (Bottom Right)
+              const tsWidth = ctx.measureText(timestamp).width;
+              const tsX = canvas.width - tsWidth - 20;
+              const tsY = canvas.height - 20;
 
-              // Draw text shadow/outline for readability
               ctx.strokeStyle = 'black';
               ctx.lineWidth = 4;
-              ctx.strokeText(timestamp, x, y);
-              
-              // Draw white text
+              ctx.strokeText(timestamp, tsX, tsY);
               ctx.fillStyle = 'white';
-              ctx.fillText(timestamp, x, y);
+              ctx.fillText(timestamp, tsX, tsY);
+
+              // Draw Comment (Bottom Left) if exists
+              if (comment) {
+                const commentText = `หมายเหตุ: ${comment}`;
+                const cX = 20;
+                const cY = canvas.height - 20;
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 4;
+                ctx.strokeText(commentText, cX, cY);
+                ctx.fillStyle = '#fde047'; // Yellow for comment
+                ctx.fillText(commentText, cX, cY);
+              }
 
               canvas.toBlob((blob) => {
                 if (blob) resolve(blob);
@@ -459,14 +483,14 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
       };
 
       // Helper to compress and append
-      const appendCompressed = async (file: File, name: string) => {
+      const appendCompressed = async (file: File, name: string, comment: string = '') => {
         try {
-          // 1. Add Timestamp
-          const timestampedBlob = await addTimestampToImage(file);
-          const timestampedFile = new File([timestampedBlob], name, { type: 'image/jpeg' });
+          // 1. Add Timestamp and Comment
+          const processedBlob = await addTimestampToImage(file, comment);
+          const processedFile = new File([processedBlob], name, { type: 'image/jpeg' });
           
           // 2. Compress
-          const compressed = await imageCompression(timestampedFile, compressionOptions);
+          const compressed = await imageCompression(processedFile, compressionOptions);
           formData.append('photos', compressed, name);
         } catch (e) {
           console.error("Processing failed, using original", e);
@@ -484,9 +508,9 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
       const nameSuffix = `${timeStr}_${dateStr}`;
 
       // Append Fixed-Point photos
-      for (const [key, files] of Object.entries(photos) as [string, File[]][]) {
-        for (let i = 0; i < files.length; i++) {
-          await appendCompressed(files[i], `${key}_${i + 1}_${nameSuffix}.jpg`);
+      for (const [key, items] of Object.entries(photos) as [string, {file: File, comment: string}[]][]) {
+        for (let i = 0; i < items.length; i++) {
+          await appendCompressed(items[i].file, `${key}_${i + 1}_${nameSuffix}.jpg`, items[i].comment);
         }
       }
       
@@ -515,7 +539,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
     }
   };
 
-  const isReady = (Object.values(photos) as File[][]).some(files => files.length > 0) || checklists.length > 0;
+  const isReady = (Object.values(photos) as {file: File, comment: string}[][]).some(items => items.length > 0) || checklists.length > 0;
 
   return (
     <div className="min-h-screen bg-violet-50 p-6 pb-32">
@@ -540,6 +564,14 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
         </div>
 
         <div className="space-y-8">
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            className="hidden" 
+            accept="image/*" 
+            capture="environment" 
+            onChange={onFileChange} 
+          />
           {locationError && (
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3 text-amber-700 text-xs">
               <AlertCircle size={16} className="shrink-0" />
@@ -583,25 +615,37 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                     </button>
                   </div>
                   
-                  <div className="grid grid-cols-4 gap-2">
-                    {photos[point.id].map((file, i) => (
-                      <div key={i} className="aspect-square bg-slate-200 rounded-lg overflow-hidden relative group">
-                        <img src={URL.createObjectURL(file)} className="w-full h-full object-cover" />
-                        <button 
-                          onClick={() => setPhotos(prev => ({
-                            ...prev,
-                            [point.id]: prev[point.id].filter((_, idx) => idx !== i)
-                          }))}
-                          className="absolute top-0.5 right-0.5 w-5 h-5 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-lg text-xs"
-                        >
-                          ×
-                        </button>
+                  <div className="grid grid-cols-1 gap-4">
+                    {photos[point.id].map((item, i) => (
+                      <div key={i} className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+                        <div className="aspect-video bg-slate-200 rounded-xl overflow-hidden relative group">
+                          <img src={URL.createObjectURL(item.file)} className="w-full h-full object-cover" />
+                          <button 
+                            onClick={() => setPhotos(prev => ({
+                              ...prev,
+                              [point.id]: prev[point.id].filter((_, idx) => idx !== i)
+                            }))}
+                            className="absolute top-2 right-2 w-8 h-8 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-lg"
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">คำอธิบายเพิ่มเติม (ถ้ามี)</p>
+                          <input 
+                            type="text"
+                            placeholder="ระบุรายละเอียดของภาพ..."
+                            value={item.comment}
+                            onChange={(e) => handleCommentChange(point.id, i, e.target.value)}
+                            className="w-full bg-slate-50 border-none rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-violet-500 outline-none"
+                          />
+                        </div>
                       </div>
                     ))}
                     {photos[point.id].length === 0 && (
-                      <div className="col-span-4 py-4 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center text-slate-400">
-                        <Camera size={20} className="mb-1 opacity-30" />
-                        <span className="text-[10px]">ยังไม่มีรูปภาพ</span>
+                      <div className="py-8 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center text-slate-400">
+                        <Camera size={24} className="mb-2 opacity-30" />
+                        <span className="text-xs font-bold">ยังไม่มีรูปภาพ</span>
                       </div>
                     )}
                   </div>
