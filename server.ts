@@ -299,7 +299,11 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
     }
 
     // 3. Upload Files to Daily Folder
+    const categories = new Set<string>();
     for (const file of files) {
+      const category = file.originalname.split('_')[0];
+      if (category) categories.add(category);
+
       const fileMetadata = {
         name: file.originalname,
         parents: [dailyFolderId],
@@ -314,6 +318,8 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
         fields: "id",
       });
     }
+
+    const categoriesStr = Array.from(categories).join(',');
 
     // 3. Log to Database
     const pool = getDbPool();
@@ -355,7 +361,8 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
           lat || "0",
           lng || "0",
           `https://drive.google.com/drive/folders/${dailyFolderId}`,
-          "Completed"
+          "Completed",
+          categoriesStr
         ];
         
         console.log("Final Row Data for Sheets:", rowData);
@@ -448,18 +455,39 @@ app.get("/api/dashboard-stats", async (req, res) => {
         gps_lat: parseFloat(row[3]) || 0,
         gps_lng: parseFloat(row[4]) || 0,
         folder_id: folderId,
-        status: row[6] || "completed"
+        status: row[6] || "completed",
+        categories: (row[7] || "").split(',').filter(Boolean)
       };
     }).filter(log => log !== null) as any[];
 
     // Sort by timestamp descending
     filteredLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-    // Count unique substations
-    const uniqueSubstations = new Set(filteredLogs.map(log => log.substation_name));
+    // Count unique substations that are "Complete"
+    // A substation is complete if it has all 9 categories covered in the month
+    const REQUIRED_CATEGORIES = ['building', 'yard', 'roof', 'annunciation', 'battery', 'grounding', 'security', 'fence', 'lighting'];
+    
+    const substationCompletion = new Map<string, Set<string>>();
+    filteredLogs.forEach(log => {
+      if (!substationCompletion.has(log.substation_name)) {
+        substationCompletion.set(log.substation_name, new Set());
+      }
+      log.categories.forEach((cat: string) => {
+        if (REQUIRED_CATEGORIES.includes(cat)) {
+          substationCompletion.get(log.substation_name)?.add(cat);
+        }
+      });
+    });
+
+    let completedCount = 0;
+    substationCompletion.forEach((cats) => {
+      if (cats.size >= REQUIRED_CATEGORIES.length) {
+        completedCount++;
+      }
+    });
 
     res.json({
-      total: uniqueSubstations.size,
+      total: completedCount,
       totalSubmissions: filteredLogs.length,
       recent: filteredLogs,
     });

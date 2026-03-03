@@ -49,6 +49,18 @@ const Card = ({ children, className }: { children: React.ReactNode; className?: 
 
 // --- Pages ---
 
+const CATEGORY_LABELS: {[key: string]: string} = {
+  building: 'อาคารควบคุม',
+  yard: 'ลานไกไฟฟ้า',
+  roof: 'หลังคาอาคาร',
+  annunciation: 'Annunciation',
+  battery: 'แบตเตอรี่',
+  grounding: 'กราวด์ทองแดง',
+  security: 'รปภ.',
+  fence: 'รั้วสถานี',
+  lighting: 'ระบบแสงสว่าง',
+};
+
 const LoginPage = ({ onLogin }: { onLogin: (id: string) => void }) => {
   const [id, setId] = useState('');
   
@@ -282,6 +294,12 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
     building: [],
     yard: [],
     roof: [],
+    annunciation: [],
+    battery: [],
+    grounding: [],
+    security: [],
+    fence: [],
+    lighting: [],
   });
   const [checklists, setChecklists] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -497,7 +515,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
     }
   };
 
-  const isReady = photos.building.length > 0 && photos.yard.length > 0 && photos.roof.length > 0 && checklists.length > 0;
+  const isReady = (Object.values(photos) as File[][]).some(files => files.length > 0) || checklists.length > 0;
 
   return (
     <div className="min-h-screen bg-violet-50 p-6 pb-32">
@@ -544,6 +562,12 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                 { id: 'building', label: 'อาคารควบคุม', desc: 'ความสะอาดภายใน/ภายนอก' },
                 { id: 'yard', label: 'ลานไกไฟฟ้า', desc: 'การจัดการวัชพืช/หญ้า' },
                 { id: 'roof', label: 'หลังคาอาคาร', desc: 'สภาพความสะอาด/รอยรั่ว' },
+                { id: 'annunciation', label: 'Annunciation', desc: 'ไฟแจ้งเตือน CSCS/SCPS/หน้าตู้' },
+                { id: 'battery', label: 'แบตเตอรี่', desc: 'น้ำกลั่นระดับ Upper Level' },
+                { id: 'grounding', label: 'กราวด์ทองแดง', desc: 'เชื่อมภายในอาคาร (ทุกชั้น)' },
+                { id: 'security', label: 'รปภ.', desc: 'การแต่งกาย' },
+                { id: 'fence', label: 'รั้วสถานี', desc: 'สภาพปกติ' },
+                { id: 'lighting', label: 'ระบบแสงสว่าง', desc: 'ภายในและภายนอกอาคาร' },
               ].map((point) => (
                 <div key={point.id} className="space-y-3">
                   <div className="flex justify-between items-center">
@@ -676,13 +700,29 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
       });
   }, [selectedMonth, selectedYear]);
 
-  const pendingSubstations = SUBSTATIONS.filter(sub => 
-    !stats.recent.some(log => log.substation_name === sub.name)
-  );
+  const REQUIRED_CATEGORIES = ['building', 'yard', 'roof', 'annunciation', 'battery', 'grounding', 'security', 'fence', 'lighting'];
 
-  const inspectedSubstations = SUBSTATIONS.filter(sub => 
-    stats.recent.some(log => log.substation_name === sub.name)
-  ).map(sub => {
+  const substationCompletionMap = new Map<string, Set<string>>();
+  stats.recent.forEach(log => {
+    if (!substationCompletionMap.has(log.substation_name)) {
+      substationCompletionMap.set(log.substation_name, new Set());
+    }
+    (log.categories || []).forEach(cat => {
+      if (REQUIRED_CATEGORIES.includes(cat)) {
+        substationCompletionMap.get(log.substation_name)?.add(cat);
+      }
+    });
+  });
+
+  const pendingSubstations = SUBSTATIONS.filter(sub => {
+    const cats = substationCompletionMap.get(sub.name);
+    return !cats || cats.size < REQUIRED_CATEGORIES.length;
+  });
+
+  const inspectedSubstations = SUBSTATIONS.filter(sub => {
+    const cats = substationCompletionMap.get(sub.name);
+    return cats && cats.size >= REQUIRED_CATEGORIES.length;
+  }).map(sub => {
     // Find the latest inspection for this sub
     const latestLog = stats.recent.find(log => log.substation_name === sub.name);
     return { ...sub, latestLog };
@@ -860,17 +900,36 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
               
               <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {pendingSubstations.map((sub, idx) => (
-                    <div key={sub.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 font-bold text-xs">
-                        {(idx + 1).toString().padStart(2, '0')}
+                  {pendingSubstations.map((sub, idx) => {
+                    const covered = substationCompletionMap.get(sub.name) || new Set();
+                    const missing = REQUIRED_CATEGORIES.filter(cat => !covered.has(cat));
+                    
+                    return (
+                      <div key={sub.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-3">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 font-bold text-xs">
+                            {(idx + 1).toString().padStart(2, '0')}
+                          </div>
+                          <div className="flex-1">
+                            <h5 className="font-bold text-slate-800 text-sm">{sub.name}</h5>
+                            <p className="text-[10px] text-slate-400 uppercase font-bold tracking-tighter">
+                              {covered.size === 0 ? 'ยังไม่มีการตรวจสอบ' : `ดำเนินการแล้ว ${covered.size}/${REQUIRED_CATEGORIES.length} หัวข้อ`}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        {missing.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {missing.map(cat => (
+                              <span key={cat} className="text-[8px] font-bold px-1.5 py-0.5 bg-rose-50 text-rose-500 rounded-md border border-rose-100">
+                                {CATEGORY_LABELS[cat] || cat}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <div>
-                        <h5 className="font-bold text-slate-800 text-sm">{sub.name}</h5>
-                        <p className="text-[10px] text-slate-400 uppercase font-bold tracking-tighter">ยังไม่มีการตรวจสอบ</p>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {pendingSubstations.length === 0 && (
                   <div className="py-20 text-center">
