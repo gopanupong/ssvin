@@ -299,10 +299,10 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
     }
 
     // 3. Upload Files to Daily Folder
-    const categories = new Set<string>();
+    const categoriesFromFiles = new Set<string>();
     for (const file of files) {
       const category = file.originalname.split('_')[0];
-      if (category) categories.add(category);
+      if (category) categoriesFromFiles.add(category);
 
       const fileMetadata = {
         name: file.originalname,
@@ -319,7 +319,8 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
       });
     }
 
-    const categoriesStr = Array.from(categories).join(',');
+    // Use categories from body if provided, otherwise fallback to filename parsing
+    const categoriesStr = req.body.categories || Array.from(categoriesFromFiles).join(',');
 
     // 3. Log to Database
     const pool = getDbPool();
@@ -354,6 +355,9 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
         const formatter = new Intl.DateTimeFormat("th-TH", options);
         const dateTimeStr = formatter.format(dateObj);
 
+        const REQUIRED_CATEGORIES = ['building', 'yard', 'roof', 'annunciation', 'battery', 'grounding', 'security', 'fence', 'lighting', 'checklist'];
+        const categoryChecks = REQUIRED_CATEGORIES.map(cat => categoriesStr.split(',').includes(cat) ? "✓" : "");
+
         const rowData = [
           dateTimeStr,
           (employeeId && String(employeeId).trim()) ? String(employeeId).trim() : "ไม่ระบุ",
@@ -362,14 +366,14 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
           lng || "0",
           `https://drive.google.com/drive/folders/${dailyFolderId}`,
           "Completed",
-          categoriesStr
+          ...categoryChecks
         ];
         
         console.log("Final Row Data for Sheets:", rowData);
 
         await sheetsService.spreadsheets.values.append({
           spreadsheetId: sheetId,
-          range: "A:G", // Try appending to the first sheet without explicit name
+          range: "A:Q", // Updated range for 17 columns (A to Q)
           valueInputOption: "USER_ENTERED",
           requestBody: {
             values: [rowData]
@@ -447,6 +451,22 @@ app.get("/api/dashboard-stats", async (req, res) => {
       const folderUrl = row[5] || "";
       const folderId = folderUrl.split("/").pop() || "";
 
+      const REQUIRED_CATEGORIES = ['building', 'yard', 'roof', 'annunciation', 'battery', 'grounding', 'security', 'fence', 'lighting', 'checklist'];
+      
+      // Extract categories - handle both old (comma-separated in col H) and new (checkmarks in cols H-Q)
+      let categories: string[] = [];
+      const colH = row[7] || "";
+      
+      // If col H is exactly a checkmark, it's the new format
+      if (colH === "✓") {
+        REQUIRED_CATEGORIES.forEach((cat, i) => {
+          if (row[7 + i] === "✓") categories.push(cat);
+        });
+      } else {
+        // Otherwise assume it's the old comma-separated format
+        categories = colH.split(',').filter(Boolean);
+      }
+
       const logEntry = {
         id: index,
         employee_id: row[1] || "Unknown",
@@ -456,7 +476,7 @@ app.get("/api/dashboard-stats", async (req, res) => {
         gps_lng: parseFloat(row[4]) || 0,
         folder_id: folderId,
         status: row[6] || "completed",
-        categories: (row[7] || "").split(',').filter(Boolean)
+        categories: categories
       };
       console.log(`Log entry ${index}: ${logEntry.substation_name}, categories: ${logEntry.categories.join(',')}`);
       return logEntry;

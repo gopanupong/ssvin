@@ -421,6 +421,8 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
       formData.append('lng', location?.lng.toString() || '0');
       formData.append('timestamp', new Date().toISOString());
 
+      const categoriesInSubmission = new Set<string>();
+      
       const compressionOptions = {
         maxSizeMB: 0.7, // Target size under 1MB
         maxWidthOrHeight: 1280,
@@ -513,15 +515,19 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
 
       // Append Fixed-Point photos
       for (const [key, items] of Object.entries(photos) as [string, {file: File, comment: string}[]][]) {
+        if (items.length > 0) categoriesInSubmission.add(key);
         for (let i = 0; i < items.length; i++) {
           await appendCompressed(items[i].file, `${key}_${i + 1}_${nameSuffix}.jpg`, items[i].comment);
         }
       }
       
       // Append Checklists
+      if (checklists.length > 0) categoriesInSubmission.add('checklist');
       for (let i = 0; i < checklists.length; i++) {
         await appendCompressed(checklists[i], `checklist_${i + 1}_${nameSuffix}.jpg`);
       }
+
+      formData.append('categories', Array.from(categoriesInSubmission).join(','));
 
       setStatus('กำลังส่งข้อมูลไปยัง Google Drive...');
       const res = await fetch('/api/upload-inspection', {
