@@ -22,7 +22,7 @@ export const SUBSTATIONS = [
   { id: "samut-sakhon-1", name: "สถานีไฟฟ้าสมุทรสาคร 1", lat: 13.548, lng: 100.272 },
   { id: "samut-sakhon-9", name: "สถานีไฟฟ้าสมุทรสาคร 9", lat: 13.562, lng: 100.282 },
   { id: "samut-sakhon-12-temp", name: "สถานีไฟฟ้าสมุทรสาคร 12 (ชั่วคราว)", lat: 13.572, lng: 100.292 },
-  { id: "samut-sakhon-17-temp", name: "สถานีไฟฟ้าสมุทรสาคร 17 (ชั่วคราว)", lat: 13.592, lng: 100.302 },
+  { id: "samut-sakhon-17-temp", name: "สถานีไฟฟ้าสมุทรสาคร 17 (ชั่วคราว)", lat: 13.5916, lng: 100.3018 },
   { id: "samut-sakhon-3", name: "สถานีไฟฟ้าสมุทรสาคร 3", lat: 13.552, lng: 100.262 },
   { id: "sala-ya", name: "สถานีไฟฟ้าศาลายา", lat: 13.795, lng: 100.325 },
   { id: "phutthamonthon-2", name: "สถานีไฟฟ้าพุทธมณฑล 2", lat: 13.785, lng: 100.315 },
