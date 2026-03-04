@@ -341,6 +341,13 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
   }, []);
 
   const handleCapture = (key: string) => {
+    // Check if mobile device
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (!isMobile) {
+      alert("⚠️ ระบบไม่อนุญาตให้อัปโหลดรูปภาพจากคอมพิวเตอร์\nกรุณาใช้งานผ่านโทรศัพท์มือถือและถ่ายรูปจากกล้องเท่านั้น");
+      return;
+    }
+
     activeCategory.current = key;
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -367,6 +374,13 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
   };
 
   const handleAddChecklist = () => {
+    // Check if mobile device
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (!isMobile) {
+      alert("⚠️ ระบบไม่อนุญาตให้อัปโหลดรูปภาพจากคอมพิวเตอร์\nกรุณาใช้งานผ่านโทรศัพท์มือถือและถ่ายรูปจากกล้องเท่านั้น");
+      return;
+    }
+
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
@@ -574,6 +588,10 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
         </div>
 
         <div className="space-y-8">
+          <div className="p-3 bg-violet-100 border border-violet-200 rounded-xl flex items-center gap-3 text-violet-700 text-[10px] font-bold uppercase tracking-wider">
+            <Camera size={16} className="shrink-0" />
+            <p>โหมดถ่ายภาพสดเท่านั้น: ไม่อนุญาตให้อัปโหลดรูปจากอัลบั้มหรือคอมพิวเตอร์</p>
+          </div>
           <input 
             type="file" 
             ref={fileInputRef} 
