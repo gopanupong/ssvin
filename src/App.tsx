@@ -116,9 +116,17 @@ const LoginPage = ({ onLogin }: { onLogin: (id: string) => void }) => {
           </form>
         </Card>
         
-        <p className="mt-8 text-xs text-slate-400 uppercase tracking-widest font-semibold">
-          Power Inspection System v1.0
-        </p>
+        <div className="mt-8 flex flex-col items-center gap-4">
+          <p className="text-xs text-slate-400 uppercase tracking-widest font-semibold">
+            Power Inspection System v1.0
+          </p>
+          <a 
+            href="/api/auth/google" 
+            className="text-[10px] text-slate-300 hover:text-violet-400 transition-colors"
+          >
+            ตั้งค่าการเชื่อมต่อ Google (สำหรับผู้ดูแล)
+          </a>
+        </div>
       </motion.div>
     </div>
   );

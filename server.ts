@@ -160,9 +160,11 @@ let drive: any = null;
 let sheets: any = null;
 
 function getGoogleAuth() {
+  // Always get fresh client to pick up any ENV changes
+  const oauth2Client = getOAuth2Client();
+  
   // Priority 1: OAuth2 Refresh Token
   if (process.env.GOOGLE_REFRESH_TOKEN) {
-    const oauth2Client = getOAuth2Client();
     oauth2Client.setCredentials({
       refresh_token: process.env.GOOGLE_REFRESH_TOKEN
     });
@@ -186,19 +188,15 @@ function getGoogleAuth() {
 }
 
 function getDriveService() {
-  if (drive) return drive;
   const auth = getGoogleAuth();
   if (!auth) return null;
-  drive = google.drive({ version: "v3", auth });
-  return drive;
+  return google.drive({ version: "v3", auth });
 }
 
 function getSheetsService() {
-  if (sheets) return sheets;
   const auth = getGoogleAuth();
   if (!auth) return null;
-  sheets = google.sheets({ version: "v4", auth });
-  return sheets;
+  return google.sheets({ version: "v4", auth });
 }
 
 app.use(express.json());
@@ -269,7 +267,7 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
         parents: [parentFolderId],
       };
       const folder = await driveService.files.create({
-        resource: folderMetadata,
+        requestBody: folderMetadata,
         fields: "id",
       });
       mainFolderId = folder.data.id;
@@ -292,7 +290,7 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
         parents: [mainFolderId],
       };
       const folder = await driveService.files.create({
-        resource: folderMetadata,
+        requestBody: folderMetadata,
         fields: "id",
       });
       dailyFolderId = folder.data.id;
@@ -313,7 +311,7 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
         body: Readable.from(file.buffer),
       };
       await driveService.files.create({
-        resource: fileMetadata,
+        requestBody: fileMetadata,
         media: media,
         fields: "id",
       });
@@ -388,7 +386,15 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
     res.json({ success: true, folderId: dailyFolderId });
   } catch (error: any) {
     console.error("Upload error:", error);
-    res.status(500).json({ error: error.message });
+    
+    let errorMessage = error.message;
+    if (errorMessage.includes("invalid_grant")) {
+      errorMessage = "สิทธิ์การเข้าถึง Google Drive หมดอายุ (invalid_grant) กรุณาแจ้งผู้ดูแลระบบให้ทำการต่ออายุ Token ใหม่ที่เมนูตั้งค่า";
+    } else if (errorMessage.includes("insufficient_permissions")) {
+      errorMessage = "ไม่มีสิทธิ์เข้าถึงโฟลเดอร์ Google Drive กรุณาตรวจสอบการตั้งค่าสิทธิ์";
+    }
+    
+    res.status(500).json({ error: errorMessage });
   }
 });
 
@@ -530,7 +536,11 @@ app.get("/api/dashboard-stats", async (req, res) => {
     });
   } catch (error: any) {
     console.error("Dashboard stats error (Sheets):", error);
-    res.status(500).json({ error: "Failed to fetch stats from Google Sheets: " + error.message });
+    let errorMessage = error.message;
+    if (errorMessage.includes("invalid_grant")) {
+      errorMessage = "สิทธิ์การเข้าถึง Google Sheets หมดอายุ (invalid_grant) กรุณาแจ้งผู้ดูแลระบบให้ทำการต่ออายุ Token ใหม่";
+    }
+    res.status(500).json({ error: "Failed to fetch stats: " + errorMessage });
   }
 });
 
