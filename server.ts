@@ -55,12 +55,19 @@ async function initDb() {
         folder_id TEXT,
         status TEXT DEFAULT 'completed'
       );
+      CREATE TABLE IF NOT EXISTS substation_master_folders (
+        substation_name TEXT PRIMARY KEY,
+        folder_id TEXT NOT NULL
+      );
     `);
     console.log("PostgreSQL initialized.");
   } catch (err) {
     console.error("Failed to initialize database:", err);
   }
 }
+
+const recentSubmissions = new Map<string, number>();
+const folderCreationLocks = new Set<string>();
 
 // Google Drive & Sheets Setup
 const SCOPES = [
@@ -209,8 +216,18 @@ app.get("/api/health", (req, res) => {
 // 1. Initialize Upload: Create folders and return Access Token
 app.post("/api/init-upload", async (req: any, res: any) => {
   const { substationName, timestamp } = req.body;
+  
+  // Simple lock to prevent concurrent creation of the same folder
+  const lockKey = `${substationName}-${timestamp?.split('T')[0]}`;
+  if (folderCreationLocks.has(lockKey)) {
+    // Wait a bit and retry search instead of creating
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+  folderCreationLocks.add(lockKey);
+
   const driveService = getDriveService();
   const auth = getGoogleAuth();
+  const pool = getDbPool();
 
   if (!driveService || !auth) {
     return res.status(500).json({ error: "Google Drive service not configured" });
@@ -231,28 +248,50 @@ app.post("/api/init-upload", async (req: any, res: any) => {
     
     const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || "1IzXUWJfucyb47Dr32QSVIxBKmoMrWF6J";
 
-    // Find or Create Main Substation Folder
+    // 1. Find or Create Main Substation Folder (Use DB for consistency)
     let mainFolderId;
-    const mainFolderQuery = await driveService.files.list({
-      q: `name = '${substationName}' and mimeType = 'application/vnd.google-apps.folder' and '${parentFolderId}' in parents and trashed = false`,
-      fields: "files(id)",
-    });
-
-    if (mainFolderQuery.data.files && mainFolderQuery.data.files.length > 0) {
-      mainFolderId = mainFolderQuery.data.files[0].id;
-    } else {
-      const folder = await driveService.files.create({
-        requestBody: {
-          name: substationName,
-          mimeType: "application/vnd.google-apps.folder",
-          parents: [parentFolderId],
-        },
-        fields: "id",
-      });
-      mainFolderId = folder.data.id;
+    if (pool) {
+      const dbResult = await pool.query("SELECT folder_id FROM substation_master_folders WHERE substation_name = $1", [substationName]);
+      if (dbResult.rows.length > 0) {
+        mainFolderId = dbResult.rows[0].folder_id;
+      }
     }
 
-    // Find or Create Daily Folder
+    if (!mainFolderId) {
+      // Double check Drive just in case
+      const mainFolderQuery = await driveService.files.list({
+        q: `name = '${substationName}' and mimeType = 'application/vnd.google-apps.folder' and '${parentFolderId}' in parents and trashed = false`,
+        fields: "files(id)",
+      });
+
+      if (mainFolderQuery.data.files && mainFolderQuery.data.files.length > 0) {
+        mainFolderId = mainFolderQuery.data.files[0].id;
+      } else {
+        const folder = await driveService.files.create({
+          requestBody: {
+            name: substationName,
+            mimeType: "application/vnd.google-apps.folder",
+            parents: [parentFolderId],
+          },
+          fields: "id",
+        });
+        mainFolderId = folder.data.id;
+      }
+
+      // Store in DB
+      if (pool && mainFolderId) {
+        try {
+          await pool.query(
+            "INSERT INTO substation_master_folders (substation_name, folder_id) VALUES ($1, $2) ON CONFLICT (substation_name) DO UPDATE SET folder_id = EXCLUDED.folder_id",
+            [substationName, mainFolderId]
+          );
+        } catch (dbErr) {
+          console.error("Failed to store master folder in DB:", dbErr);
+        }
+      }
+    }
+
+    // 2. Find or Create Daily Folder
     const dailyFolderName = `${substationName}_${dateStr}`;
     let dailyFolderId;
     const dailyFolderQuery = await driveService.files.list({
@@ -281,6 +320,8 @@ app.post("/api/init-upload", async (req: any, res: any) => {
   } catch (error: any) {
     console.error("Init upload error:", error);
     res.status(500).json({ error: error.message });
+  } finally {
+    folderCreationLocks.delete(lockKey);
   }
 });
 
@@ -347,8 +388,6 @@ app.post("/api/complete-upload", async (req: any, res: any) => {
     res.status(500).json({ error: error.message });
   }
 });
-
-const recentSubmissions = new Map<string, number>();
 
 app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res: any) => {
   const { employeeId, substationName, lat, lng, timestamp } = req.body;

@@ -462,9 +462,11 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
 
   const handleSubmit = async () => {
     if (isSubmitting.current) return;
+    isSubmitting.current = true;
     
     if (!employeeId) {
       alert('ไม่พบรหัสพนักงาน กรุณาล็อกอินใหม่');
+      isSubmitting.current = false;
       return;
     }
 
@@ -488,7 +490,6 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
       }
     }
     
-    isSubmitting.current = true;
     setUploading(true);
     setStatus('กำลังเตรียมการอัปโหลด...');
     
