@@ -206,6 +206,148 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "SSVI API is running" });
 });
 
+// 1. Initialize Upload: Create folders and return Access Token
+app.post("/api/init-upload", async (req: any, res: any) => {
+  const { substationName, timestamp } = req.body;
+  const driveService = getDriveService();
+  const auth = getGoogleAuth();
+
+  if (!driveService || !auth) {
+    return res.status(500).json({ error: "Google Drive service not configured" });
+  }
+
+  try {
+    // Get fresh access token
+    const tokenResponse = await auth.getAccessToken();
+    const accessToken = tokenResponse.token;
+
+    const dateObj = timestamp ? new Date(timestamp) : new Date();
+    const dateStr = new Intl.DateTimeFormat("th-TH", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+      timeZone: "Asia/Bangkok"
+    }).format(dateObj).replace(/\//g, ""); 
+    
+    const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || "1IzXUWJfucyb47Dr32QSVIxBKmoMrWF6J";
+
+    // Find or Create Main Substation Folder
+    let mainFolderId;
+    const mainFolderQuery = await driveService.files.list({
+      q: `name = '${substationName}' and mimeType = 'application/vnd.google-apps.folder' and '${parentFolderId}' in parents and trashed = false`,
+      fields: "files(id)",
+    });
+
+    if (mainFolderQuery.data.files && mainFolderQuery.data.files.length > 0) {
+      mainFolderId = mainFolderQuery.data.files[0].id;
+    } else {
+      const folder = await driveService.files.create({
+        requestBody: {
+          name: substationName,
+          mimeType: "application/vnd.google-apps.folder",
+          parents: [parentFolderId],
+        },
+        fields: "id",
+      });
+      mainFolderId = folder.data.id;
+    }
+
+    // Find or Create Daily Folder
+    const dailyFolderName = `${substationName}_${dateStr}`;
+    let dailyFolderId;
+    const dailyFolderQuery = await driveService.files.list({
+      q: `name = '${dailyFolderName}' and mimeType = 'application/vnd.google-apps.folder' and '${mainFolderId}' in parents and trashed = false`,
+      fields: "files(id)",
+    });
+
+    if (dailyFolderQuery.data.files && dailyFolderQuery.data.files.length > 0) {
+      dailyFolderId = dailyFolderQuery.data.files[0].id;
+    } else {
+      const folder = await driveService.files.create({
+        requestBody: {
+          name: dailyFolderName,
+          mimeType: "application/vnd.google-apps.folder",
+          parents: [mainFolderId],
+        },
+        fields: "id",
+      });
+      dailyFolderId = folder.data.id;
+    }
+
+    res.json({ 
+      accessToken, 
+      folderId: dailyFolderId 
+    });
+  } catch (error: any) {
+    console.error("Init upload error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 2. Complete Upload: Log to DB and Sheets
+app.post("/api/complete-upload", async (req: any, res: any) => {
+  const { employeeId, substationName, lat, lng, timestamp, folderId, categories } = req.body;
+  
+  try {
+    const dateObj = timestamp ? new Date(timestamp) : new Date();
+    
+    // Log to Database
+    const pool = getDbPool();
+    if (pool) {
+      try {
+        await pool.query(
+          "INSERT INTO inspection_logs (employee_id, substation_name, gps_lat, gps_lng, folder_id, timestamp) VALUES ($1, $2, $3, $4, $5, $6)",
+          [employeeId || "Unknown", substationName, lat, lng, folderId, dateObj]
+        );
+      } catch (dbErr) {
+        console.error("DB Log failed:", dbErr);
+      }
+    }
+
+    // Log to Google Sheets
+    const sheetsService = getSheetsService();
+    const sheetId = process.env.GOOGLE_SHEET_ID || "1WpvuQnhXzufiBmSRSaEnkRFs9BJf5H4fIWZ0xoYC8iw";
+    if (sheetsService && sheetId) {
+      try {
+        const options: Intl.DateTimeFormatOptions = { 
+          timeZone: "Asia/Bangkok",
+          year: "numeric", month: "2-digit", day: "2-digit",
+          hour: "2-digit", minute: "2-digit", second: "2-digit",
+          hour12: false 
+        };
+        const dateTimeStr = new Intl.DateTimeFormat("th-TH", options).format(dateObj);
+
+        const REQUIRED_CATEGORIES = ['building', 'yard', 'roof', 'annunciation', 'battery', 'grounding', 'security', 'fence', 'lighting', 'checklist'];
+        const categoryChecks = REQUIRED_CATEGORIES.map(cat => categories.split(',').includes(cat) ? "1" : "0");
+
+        const rowData = [
+          dateTimeStr,
+          (employeeId && String(employeeId).trim()) ? String(employeeId).trim() : "ไม่ระบุ",
+          substationName || "ไม่ระบุ",
+          lat || "0",
+          lng || "0",
+          `https://drive.google.com/drive/folders/${folderId}`,
+          "Completed",
+          ...categoryChecks
+        ];
+
+        await sheetsService.spreadsheets.values.append({
+          spreadsheetId: sheetId,
+          range: "A:Q",
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: [rowData] }
+        });
+      } catch (sheetErr) {
+        console.error("Failed to log to Google Sheets:", sheetErr);
+      }
+    }
+
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 const recentSubmissions = new Map<string, number>();
 
 app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res: any) => {

@@ -402,6 +402,64 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
     input.click();
   };
 
+  const addTimestampToImage = (file: File, comment: string): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return reject('Could not get canvas context');
+
+          // Draw original image
+          ctx.drawImage(img, 0, 0);
+
+          // Setup text style
+          const fontSize = Math.max(20, Math.floor(canvas.width / 40));
+          ctx.font = `bold ${fontSize}px sans-serif`;
+          const timestamp = format(new Date(), 'dd/MM/yyyy HH:mm:ss', { locale: th });
+          
+          // Draw Timestamp (Bottom Right)
+          const tsWidth = ctx.measureText(timestamp).width;
+          const tsX = canvas.width - tsWidth - 20;
+          const tsY = canvas.height - 20;
+
+          // Draw Comment (Above Timestamp) if exists
+          if (comment) {
+            const commentText = comment;
+            const cWidth = ctx.measureText(commentText).width;
+            const cX = canvas.width - cWidth - 20;
+            const cY = tsY - fontSize - 8; // Position above timestamp with a small gap
+
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 4;
+            ctx.strokeText(commentText, cX, cY);
+            ctx.fillStyle = '#fde047'; // Yellow for comment
+            ctx.fillText(commentText, cX, cY);
+          }
+
+          // Draw Timestamp
+          ctx.strokeStyle = 'black';
+          ctx.lineWidth = 4;
+          ctx.strokeText(timestamp, tsX, tsY);
+          ctx.fillStyle = 'white';
+          ctx.fillText(timestamp, tsX, tsY);
+
+          canvas.toBlob((blob) => {
+            if (blob) resolve(blob);
+            else reject('Canvas to Blob failed');
+          }, 'image/jpeg', 0.9);
+        };
+        img.src = event.target?.result as string;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleSubmit = async () => {
     if (isSubmitting.current) return;
     
@@ -432,100 +490,9 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
     
     isSubmitting.current = true;
     setUploading(true);
-    setStatus('กำลังบีบอัดรูปภาพ...');
-    console.log("Submitting inspection for employee:", employeeId);
+    setStatus('กำลังเตรียมการอัปโหลด...');
     
     try {
-      const formData = new FormData();
-      formData.append('employeeId', employeeId);
-      formData.append('substationName', substation.name);
-      formData.append('lat', location?.lat.toString() || '0');
-      formData.append('lng', location?.lng.toString() || '0');
-      formData.append('timestamp', new Date().toISOString());
-
-      const categoriesInSubmission = new Set<string>();
-      
-      const compressionOptions = {
-        maxSizeMB: 0.7, // Target size under 1MB
-        maxWidthOrHeight: 1280,
-        useWebWorker: true
-      };
-
-      // Helper to add timestamp to image
-      const addTimestampToImage = (file: File, comment: string): Promise<Blob> => {
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = (event) => {
-            const img = new Image();
-            img.onload = () => {
-              const canvas = document.createElement('canvas');
-              canvas.width = img.width;
-              canvas.height = img.height;
-              const ctx = canvas.getContext('2d');
-              if (!ctx) return reject('Could not get canvas context');
-
-              // Draw original image
-              ctx.drawImage(img, 0, 0);
-
-              // Setup text style
-              const fontSize = Math.max(20, Math.floor(canvas.width / 40));
-              ctx.font = `bold ${fontSize}px sans-serif`;
-              const timestamp = format(new Date(), 'dd/MM/yyyy HH:mm:ss', { locale: th });
-              
-              // Draw Timestamp (Bottom Right)
-              const tsWidth = ctx.measureText(timestamp).width;
-              const tsX = canvas.width - tsWidth - 20;
-              const tsY = canvas.height - 20;
-
-              // Draw Comment (Above Timestamp) if exists
-              if (comment) {
-                const commentText = comment;
-                const cWidth = ctx.measureText(commentText).width;
-                const cX = canvas.width - cWidth - 20;
-                const cY = tsY - fontSize - 8; // Position above timestamp with a small gap
-
-                ctx.strokeStyle = 'black';
-                ctx.lineWidth = 4;
-                ctx.strokeText(commentText, cX, cY);
-                ctx.fillStyle = '#fde047'; // Yellow for comment
-                ctx.fillText(commentText, cX, cY);
-              }
-
-              // Draw Timestamp
-              ctx.strokeStyle = 'black';
-              ctx.lineWidth = 4;
-              ctx.strokeText(timestamp, tsX, tsY);
-              ctx.fillStyle = 'white';
-              ctx.fillText(timestamp, tsX, tsY);
-
-              canvas.toBlob((blob) => {
-                if (blob) resolve(blob);
-                else reject('Canvas to Blob failed');
-              }, 'image/jpeg', 0.9);
-            };
-            img.src = event.target?.result as string;
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-      };
-
-      // Helper to compress and append
-      const appendCompressed = async (file: File, name: string, comment: string = '') => {
-        try {
-          // 1. Add Timestamp and Comment
-          const processedBlob = await addTimestampToImage(file, comment);
-          const processedFile = new File([processedBlob], name, { type: 'image/jpeg' });
-          
-          // 2. Compress
-          const compressed = await imageCompression(processedFile, compressionOptions);
-          formData.append('photos', compressed, name);
-        } catch (e) {
-          console.error("Processing failed, using original", e);
-          formData.append('photos', file, name);
-        }
-      };
-
       const now = new Date();
       const timeStr = format(now, 'HHmm');
       const dateStr = now.toLocaleDateString("th-TH", {
@@ -535,36 +502,112 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
       }).replace(/\//g, "");
       const nameSuffix = `${timeStr}_${dateStr}`;
 
-      // Append Fixed-Point photos
-      for (const [key, items] of Object.entries(photos) as [string, {file: File, comment: string}[]][]) {
+      // 1. Initialize Upload (Get Token and Folder ID)
+      const initRes = await fetch('/api/init-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ substationName: substation.name, timestamp: now.toISOString() })
+      });
+      
+      if (!initRes.ok) {
+        const errData = await initRes.json();
+        throw new Error(errData.error || 'Failed to initialize upload');
+      }
+      
+      const { accessToken, folderId } = await initRes.json();
+      const categoriesInSubmission = new Set<string>();
+
+      // Helper to upload directly to Google Drive
+      const uploadToDrive = async (blob: Blob, filename: string) => {
+        const metadata = {
+          name: filename,
+          parents: [folderId]
+        };
+
+        const formData = new FormData();
+        formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+        formData.append('file', blob);
+
+        const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          },
+          body: formData
+        });
+
+        if (!response.ok) {
+          throw new Error(`Drive upload failed: ${response.statusText}`);
+        }
+        return await response.json();
+      };
+
+      const compressionOptions = {
+        maxSizeMB: 0.8,
+        maxWidthOrHeight: 1600,
+        useWebWorker: true
+      };
+
+      // Process and Upload Fixed-Point photos
+      const photoEntries = Object.entries(photos) as [string, {file: File, comment: string}[]][];
+      let totalPhotos = 0;
+      photoEntries.forEach(([_, items]) => totalPhotos += items.length);
+      totalPhotos += checklists.length;
+      
+      let currentCount = 0;
+
+      for (const [key, items] of photoEntries) {
         if (items.length > 0) categoriesInSubmission.add(key);
         for (let i = 0; i < items.length; i++) {
-          await appendCompressed(items[i].file, `${key}_${i + 1}_${nameSuffix}.jpg`, items[i].comment);
+          currentCount++;
+          setStatus(`กำลังประมวลผลรูปที่ ${currentCount}/${totalPhotos}...`);
+          
+          const processedBlob = await addTimestampToImage(items[i].file, items[i].comment);
+          const processedFile = new File([processedBlob], 'temp.jpg', { type: 'image/jpeg' });
+          const compressedBlob = await imageCompression(processedFile, compressionOptions);
+          
+          await uploadToDrive(compressedBlob, `${key}_${i + 1}_${nameSuffix}.jpg`);
         }
       }
       
-      // Append Checklists
+      // Process and Upload Checklists
       if (checklists.length > 0) categoriesInSubmission.add('checklist');
       for (let i = 0; i < checklists.length; i++) {
-        await appendCompressed(checklists[i], `checklist_${i + 1}_${nameSuffix}.jpg`);
+        currentCount++;
+        setStatus(`กำลังประมวลผลรูปที่ ${currentCount}/${totalPhotos}...`);
+        
+        const processedBlob = await addTimestampToImage(checklists[i], '');
+        const processedFile = new File([processedBlob], 'temp.jpg', { type: 'image/jpeg' });
+        const compressedBlob = await imageCompression(processedFile, compressionOptions);
+        
+        await uploadToDrive(compressedBlob, `checklist_${i + 1}_${nameSuffix}.jpg`);
       }
 
-      formData.append('categories', Array.from(categoriesInSubmission).join(','));
-
-      setStatus('กำลังส่งข้อมูลไปยัง Google Drive...');
-      const res = await fetch('/api/upload-inspection', {
+      // 3. Finalize: Log to DB and Sheets
+      setStatus('กำลังบันทึกข้อมูลรายงาน...');
+      const finalizeRes = await fetch('/api/complete-upload', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeId,
+          substationName: substation.name,
+          lat: location?.lat || 0,
+          lng: location?.lng || 0,
+          timestamp: now.toISOString(),
+          folderId,
+          categories: Array.from(categoriesInSubmission).join(',')
+        })
       });
-      const data = await res.json();
-      if (res.ok) {
+
+      if (finalizeRes.ok) {
         onComplete();
       } else {
-        alert(`เกิดข้อผิดพลาด: ${data.error || 'ไม่สามารถอัปโหลดได้'}`);
+        const errData = await finalizeRes.json();
+        alert(`บันทึกข้อมูลไม่สำเร็จ: ${errData.error}`);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ หรือไฟล์มีขนาดใหญ่เกินไป (Vercel Limit 4.5MB)');
+      alert(`เกิดข้อผิดพลาด: ${err.message}`);
     } finally {
       setUploading(false);
       isSubmitting.current = false;
