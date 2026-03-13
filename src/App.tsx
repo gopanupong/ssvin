@@ -350,9 +350,18 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
     const checkDevice = () => {
       const ua = navigator.userAgent;
       const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(ua);
-      // Check for iPadOS (iPad Pro/Air/Mini on iOS 13+)
+      
+      // Check for touch capabilities (Most PCs don't have this, but all Tablets/Phones do)
+      const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+      
+      // Special check for iPadOS (iPad Pro/Air/Mini on iOS 13+)
       const isIPadOS = (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-      setIsMobile(isMobileDevice || isIPadOS);
+      
+      // If it has touch and is not a massive screen, or matches mobile UA, allow it
+      const finalIsMobile = isMobileDevice || isIPadOS || hasTouch;
+      
+      setIsMobile(finalIsMobile);
+      console.log("Device Check:", { ua, isMobileDevice, isIPadOS, hasTouch, finalIsMobile });
     };
     checkDevice();
     getGeoLocation();
