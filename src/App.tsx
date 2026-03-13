@@ -13,7 +13,8 @@ import {
   Loader2,
   Image as ImageIcon,
   FileText,
-  Plus
+  Plus,
+  MonitorOff
 } from 'lucide-react';
 import { cn, SUBSTATIONS, InspectionLog } from './constants';
 import { format } from 'date-fns';
@@ -316,6 +317,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
   const [status, setStatus] = useState<string>('');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState<boolean>(true);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const activeCategory = useRef<string | null>(null);
@@ -345,14 +347,20 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
   };
 
   useEffect(() => {
+    const checkDevice = () => {
+      const ua = navigator.userAgent;
+      const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(ua);
+      // Check for iPadOS (iPad Pro/Air/Mini on iOS 13+)
+      const isIPadOS = (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      setIsMobile(isMobileDevice || isIPadOS);
+    };
+    checkDevice();
     getGeoLocation();
   }, []);
 
   const handleCapture = (key: string) => {
-    // Check if mobile device
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     if (!isMobile) {
-      alert("⚠️ ระบบไม่อนุญาตให้อัปโหลดรูปภาพจากคอมพิวเตอร์\nกรุณาใช้งานผ่านโทรศัพท์มือถือและถ่ายรูปจากกล้องเท่านั้น");
+      alert("⚠️ ระบบไม่อนุญาตให้อัปโหลดรูปภาพจากคอมพิวเตอร์\nกรุณาใช้งานผ่านโทรศัพท์มือถือหรือแท็บเล็ต และถ่ายรูปจากกล้องเท่านั้น");
       return;
     }
 
@@ -382,10 +390,8 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
   };
 
   const handleAddChecklist = () => {
-    // Check if mobile device
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     if (!isMobile) {
-      alert("⚠️ ระบบไม่อนุญาตให้อัปโหลดรูปภาพจากคอมพิวเตอร์\nกรุณาใช้งานผ่านโทรศัพท์มือถือและถ่ายรูปจากกล้องเท่านั้น");
+      alert("⚠️ ระบบไม่อนุญาตให้อัปโหลดรูปภาพจากคอมพิวเตอร์\nกรุณาใช้งานผ่านโทรศัพท์มือถือหรือแท็บเล็ต และถ่ายรูปจากกล้องเท่านั้น");
       return;
     }
 
@@ -619,6 +625,30 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
 
   return (
     <div className="min-h-screen bg-violet-50 p-6 pb-32">
+      {/* Desktop Restriction Overlay */}
+      {!isMobile && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[9999] flex items-center justify-center p-6 text-center">
+          <div className="bg-white rounded-3xl p-8 max-w-md shadow-2xl">
+            <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <MonitorOff className="w-10 h-10 text-red-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">เข้าใช้งานผ่านคอมพิวเตอร์</h2>
+            <p className="text-gray-600 mb-8 leading-relaxed">
+              ขออภัย ระบบรายงานนี้ออกแบบมาเพื่อใช้หน้างานผ่าน <span className="font-bold text-gray-900">โทรศัพท์มือถือ หรือ แท็บเล็ต</span> เท่านั้น เพื่อความถูกต้องของข้อมูล GPS และการถ่ายภาพสด
+            </p>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-800 text-sm mb-8">
+              กรุณาสแกน QR Code หรือเข้าลิงก์เดิมผ่านอุปกรณ์พกพาของคุณ
+            </div>
+            <button 
+              onClick={onBack}
+              className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors"
+            >
+              กลับหน้าหลัก
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-md mx-auto">
         <div className="flex items-center gap-4 mb-8">
           <button onClick={onBack} className="p-2 -ml-2 text-slate-400 hover:text-slate-900">
