@@ -318,6 +318,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState<boolean>(true);
+  const [showConfirm, setShowConfirm] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const activeCategory = useRef<string | null>(null);
@@ -806,7 +807,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
         <div className="fixed bottom-0 left-0 right-0 p-6 bg-white border-t border-slate-100 shadow-2xl">
           <div className="max-w-md mx-auto">
             <Button 
-              onClick={handleSubmit} 
+              onClick={() => setShowConfirm(true)} 
               className="w-full h-14 text-lg" 
               disabled={!isReady || uploading}
             >
@@ -822,6 +823,44 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
             </Button>
           </div>
         </div>
+
+        {/* Confirmation Modal */}
+        <AnimatePresence>
+          {showConfirm && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[10000] flex items-center justify-center p-6">
+              <motion.div 
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center"
+              >
+                <div className="w-20 h-20 bg-violet-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <Upload className="w-10 h-10 text-violet-600" />
+                </div>
+                <h3 className="text-xl font-bold text-slate-900 mb-2">ยืนยันการส่งรายงาน</h3>
+                <p className="text-slate-500 text-sm mb-8">คุณยืนยันที่จะส่งรายงานประจำเดือนของสถานี {substation.name} หรือไม่?</p>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <button 
+                    onClick={() => setShowConfirm(false)}
+                    className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors"
+                  >
+                    ไม่ใช่
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setShowConfirm(false);
+                      handleSubmit();
+                    }}
+                    className="py-3 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl shadow-lg shadow-violet-200 transition-colors"
+                  >
+                    ใช่
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
