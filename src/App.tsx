@@ -394,7 +394,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
 
       if (diffSeconds > maxAllowedDiff || isLikelyAlbum) {
         const reason = isLikelyAlbum ? "ตรวจพบชื่อไฟล์ที่มาจากอัลบั้ม/แอปอื่น" : `เวลาที่ถ่ายต่างจากปัจจุบันเกินไป (${Math.round(diffSeconds)} วินาที, ขีดจำกัด ${maxAllowedDiff} วินาที)`;
-        alert(`❌ ฟังก์ชันเลือกรูปจากอัลบั้มถูกปิดใช้งาน\n\nเหตุผล: ${reason}\n\nคำแนะนำ: กรุณากด 'เพิ่มรูป' และเลือก 'กล้องถ่ายรูป' (Camera) เพื่อถ่ายใหม่และกดตกลงทันที`);
+        alert(`❌ ฟังก์ชันเลือกรูปจากอัลบั้มถูกปิดใช้งาน\n\nเหตุผล: ${reason}\n\nคำแนะนำ: กรุณากดปุ่ม 'ถ่ายภาพ' และเลือก 'กล้อง' (Camera) เพื่อถ่ายภาพหน้างานจริงเท่านั้น\n\n(ห้ามเลือกรูปจาก แกลเลอรี หรือ อัลบั้ม)`);
         e.target.value = '';
         return;
       }
@@ -723,7 +723,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                       <Camera size={14} /> ถ่ายภาพ
                       <input 
                         type="file" 
-                        accept="image/*;capture=camera" 
+                        accept="image/*" 
                         capture="environment" 
                         className="hidden" 
                         onChange={(e) => onFileChange(e, point.id)} 
@@ -794,7 +794,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                 <span className="text-[8px] font-bold mt-1">ถ่ายภาพ</span>
                 <input 
                   type="file" 
-                  accept="image/*;capture=camera" 
+                  accept="image/*" 
                   capture="environment" 
                   className="hidden" 
                   onChange={(e) => onFileChange(e, 'checklist')} 
