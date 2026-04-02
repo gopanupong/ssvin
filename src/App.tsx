@@ -48,137 +48,6 @@ const Card = ({ children, className }: { children: React.ReactNode; className?: 
   </div>
 );
 
-const CameraModal = ({ onCapture, onClose }: { onCapture: (file: File) => void; onClose: () => void }) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isReady, setIsReady] = useState(false);
-
-  useEffect(() => {
-    const startCamera = async () => {
-      try {
-        const mediaStream = await navigator.mediaDevices.getUserMedia({
-          video: { 
-            facingMode: 'environment',
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
-          },
-          audio: false
-        });
-        setStream(mediaStream);
-        if (videoRef.current) {
-          videoRef.current.srcObject = mediaStream;
-        }
-      } catch (err) {
-        console.error("Camera error:", err);
-        setError("ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการเข้าถึงกล้องในเบราว์เซอร์ของคุณ");
-      }
-    };
-
-    startCamera();
-
-    return () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, []);
-
-  const handleCapture = () => {
-    if (videoRef.current && canvasRef.current) {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      
-      // Use video's actual dimensions
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        canvas.toBlob((blob) => {
-          if (blob) {
-            const file = new File([blob], `capture_${Date.now()}.jpg`, { type: 'image/jpeg' });
-            onCapture(file);
-            onClose();
-          }
-        }, 'image/jpeg', 0.95);
-      }
-    }
-  };
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black z-[10000] flex flex-col"
-    >
-      <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden">
-        {error ? (
-          <div className="text-white text-center p-8 max-w-xs">
-            <div className="w-16 h-16 bg-rose-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-              <AlertCircle className="w-8 h-8 text-rose-500" />
-            </div>
-            <h3 className="text-lg font-bold mb-2">เกิดข้อผิดพลาด</h3>
-            <p className="text-slate-400 text-sm mb-8 leading-relaxed">{error}</p>
-            <Button onClick={onClose} variant="outline" className="w-full text-white border-white/20 hover:bg-white/10">
-              ปิดหน้าต่าง
-            </Button>
-          </div>
-        ) : (
-          <>
-            <video 
-              ref={videoRef} 
-              autoPlay 
-              playsInline 
-              onLoadedMetadata={() => setIsReady(true)}
-              className="w-full h-full object-cover"
-            />
-            <canvas ref={canvasRef} className="hidden" />
-            
-            {/* Camera Frame UI */}
-            <div className="absolute inset-0 pointer-events-none border-[20px] border-black/20" />
-          </>
-        )}
-        
-        <button 
-          onClick={onClose}
-          className="absolute top-6 right-6 w-12 h-12 bg-black/40 text-white rounded-full flex items-center justify-center backdrop-blur-xl border border-white/10 z-20"
-        >
-          <Plus className="rotate-45" size={24} />
-        </button>
-      </div>
-
-      {isReady && !error && (
-        <div className="h-40 bg-black flex items-center justify-center gap-12 px-6 relative">
-          <div className="w-14 h-14 rounded-full border-2 border-white/20 flex items-center justify-center overflow-hidden bg-white/5">
-            <ImageIcon className="text-white/20 w-6 h-6" />
-          </div>
-
-          <button 
-            onClick={handleCapture}
-            className="w-24 h-24 bg-white rounded-full p-1 shadow-2xl active:scale-90 transition-all"
-          >
-            <div className="w-full h-full rounded-full border-4 border-black/5 flex items-center justify-center">
-              <div className="w-16 h-16 rounded-full border-2 border-black/10" />
-            </div>
-          </button>
-
-          <div className="w-14 h-14 rounded-full border-2 border-white/20 flex items-center justify-center bg-white/5">
-            <Camera className="text-white/40 w-6 h-6" />
-          </div>
-          
-          <p className="absolute bottom-4 text-[10px] text-white/30 font-bold uppercase tracking-[0.2em]">
-            Tap to capture live photo
-          </p>
-        </div>
-      )}
-    </motion.div>
-  );
-};
-
 // --- Pages ---
 
 const CATEGORY_LABELS: {[key: string]: string} = {
@@ -450,8 +319,8 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
   const [locationError, setLocationError] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState<boolean>(true);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [showCamera, setShowCamera] = useState(false);
   
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const activeCategory = useRef<string | null>(null);
 
   const getGeoLocation = () => {
@@ -506,12 +375,28 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
     }
 
     activeCategory.current = key;
-    setShowCamera(true);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
   };
 
-  const onCameraCapture = (file: File) => {
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     const key = activeCategory.current;
+    
     if (file && key) {
+      // Time-based validation: Check if photo was taken in the last 2 minutes
+      const now = Date.now();
+      const fileTime = file.lastModified;
+      const diffMinutes = (now - fileTime) / 1000 / 60;
+
+      if (diffMinutes > 2) {
+        alert("⚠️ ไม่อนุญาตให้เลือกรูปจากอัลบั้ม\nกรุณาถ่ายภาพสดจากกล้องเท่านั้น เพื่อความถูกต้องของข้อมูล");
+        activeCategory.current = null;
+        return;
+      }
+
       if (key === 'checklist') {
         setChecklists(prev => [...prev, file]);
       } else {
@@ -537,7 +422,10 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
     }
 
     activeCategory.current = 'checklist';
-    setShowCamera(true);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
   };
 
   const addTimestampToImage = (file: File, comment: string): Promise<Blob> => {
@@ -804,17 +692,17 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
         <div className="space-y-8">
           <div className="p-3 bg-violet-100 border border-violet-200 rounded-xl flex items-center gap-3 text-violet-700 text-[10px] font-bold uppercase tracking-wider">
             <Camera size={16} className="shrink-0" />
-            <p>โหมดถ่ายภาพสดเท่านั้น: ระบบบังคับให้ใช้กล้องเพื่อความถูกต้องของข้อมูล</p>
+            <p>โหมดถ่ายภาพสดเท่านั้น: ระบบตรวจสอบเวลาภาพถ่ายเพื่อป้องกันการใช้อัลบั้ม</p>
           </div>
           
-          <AnimatePresence>
-            {showCamera && (
-              <CameraModal 
-                onCapture={onCameraCapture} 
-                onClose={() => setShowCamera(false)} 
-              />
-            )}
-          </AnimatePresence>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            className="hidden" 
+            accept="image/*" 
+            capture="environment" 
+            onChange={onFileChange} 
+          />
 
           {locationError && (
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3 text-amber-700 text-xs">
