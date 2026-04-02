@@ -386,16 +386,30 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
     const key = activeCategory.current;
     
     if (file && key) {
-      // Strict Time-based validation: Check if photo was taken in the last 30 seconds
       const now = Date.now();
       const fileTime = file.lastModified;
-      const diffSeconds = (now - fileTime) / 1000;
+      const diffSeconds = Math.abs(now - fileTime) / 1000;
+      
+      // Detect LINE Browser
+      const isLine = /Line/i.test(navigator.userAgent);
+      
+      // Ultra-strict validation for LINE: only 8 seconds allowed
+      // For other browsers: 15 seconds
+      const maxAllowedDiff = isLine ? 8 : 15;
 
-      // Freshly taken photos usually have a timestamp within seconds of Date.now()
-      // Album photos are usually minutes, hours or days old.
-      if (diffSeconds > 30) {
-        alert("⚠️ ตรวจพบการเลือกรูปจากอัลบั้ม\nระบบอนุญาตให้ 'ถ่ายภาพสด' เท่านั้น กรุณากดถ่ายรูปใหม่ครับ");
+      // Filename validation: Camera photos usually have very specific names
+      const fileName = file.name.toLowerCase();
+      const isLikelyAlbum = fileName.includes('screenshot') || 
+                            fileName.includes('fb_img') || 
+                            fileName.includes('line_album') ||
+                            (isLine && !fileName.includes('image') && !fileName.includes('cap'));
+
+      if (diffSeconds > maxAllowedDiff || isLikelyAlbum) {
+        const reason = diffSeconds > maxAllowedDiff ? "รูปนี้ถูกถ่ายไว้นานเกินไป" : "รูปแบบไฟล์ไม่ถูกต้อง (ห้ามใช้รูปจากอัลบั้ม)";
+        alert(`⚠️ ปฏิเสธการอัปโหลด: ${reason}\n\nระบบอนุญาตให้ 'ถ่ายภาพสด' เท่านั้น\n\nคำแนะนำ: กรุณากดถ่ายรูปใหม่และกด 'ตกลง' ทันที (ห้ามเลือกจากคลังรูปภาพ)`);
+        
         activeCategory.current = null;
+        if (fileInputRef.current) fileInputRef.current.value = '';
         return;
       }
 
