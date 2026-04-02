@@ -320,9 +320,6 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
   const [isMobile, setIsMobile] = useState<boolean>(true);
   const [showConfirm, setShowConfirm] = useState(false);
   
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const activeCategory = useRef<string | null>(null);
-
   const getGeoLocation = () => {
     if (!navigator.geolocation) {
       setLocationError("เบราว์เซอร์ไม่รองรับ GPS");
@@ -368,22 +365,8 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
     getGeoLocation();
   }, []);
 
-  const handleCapture = (key: string) => {
-    if (!isMobile) {
-      alert("⚠️ ระบบไม่อนุญาตให้อัปโหลดรูปภาพจากคอมพิวเตอร์\nกรุณาใช้งานผ่านโทรศัพท์มือถือหรือแท็บเล็ต และถ่ายรูปจากกล้องเท่านั้น");
-      return;
-    }
-
-    activeCategory.current = key;
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-      fileInputRef.current.click();
-    }
-  };
-
-  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>, key: string) => {
     const file = e.target.files?.[0];
-    const key = activeCategory.current;
     
     if (file && key) {
       const now = Date.now();
@@ -393,23 +376,21 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
       // Detect LINE Browser
       const isLine = /Line/i.test(navigator.userAgent);
       
-      // Ultra-strict validation for LINE: only 5 seconds allowed (impossible for album photos)
-      // For other browsers: 10 seconds
-      const maxAllowedDiff = isLine ? 5 : 10;
+      // Strict validation for Live Photo
+      // For LINE: 10 seconds (LINE can be slow)
+      // For others: 15 seconds
+      const maxAllowedDiff = isLine ? 10 : 15;
 
       // Filename and Metadata validation
       const fileName = file.name.toLowerCase();
       const isLikelyAlbum = fileName.includes('screenshot') || 
                             fileName.includes('fb_img') || 
                             fileName.includes('line_album') ||
-                            fileName.includes('save') ||
-                            (isLine && !fileName.includes('image') && !fileName.includes('cap'));
+                            fileName.includes('save');
 
       if (diffSeconds > maxAllowedDiff || isLikelyAlbum) {
         alert(`❌ ฟังก์ชันเลือกรูปจากอัลบั้มถูกปิดใช้งาน\n\nระบบตรวจพบว่าคุณพยายามเลือกรูปที่ไม่ได้ถ่ายสด\nกรุณากด 'เพิ่มรูป' และเลือก 'กล้องถ่ายรูป' เพื่อถ่ายใหม่เท่านั้น`);
-        
-        activeCategory.current = null;
-        if (fileInputRef.current) fileInputRef.current.value = '';
+        e.target.value = '';
         return;
       }
 
@@ -419,7 +400,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
         setPhotos(prev => ({ ...prev, [key]: [...prev[key], { file, comment: '' }] }));
       }
     }
-    activeCategory.current = null;
+    e.target.value = '';
   };
 
   const handleCommentChange = (key: string, index: number, comment: string) => {
@@ -429,19 +410,6 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
       newPhotos[key][index] = { ...newPhotos[key][index], comment };
       return newPhotos;
     });
-  };
-
-  const handleAddChecklist = () => {
-    if (!isMobile) {
-      alert("⚠️ ระบบไม่อนุญาตให้อัปโหลดรูปภาพจากคอมพิวเตอร์\nกรุณาใช้งานผ่านโทรศัพท์มือถือหรือแท็บเล็ต และถ่ายรูปจากกล้องเท่านั้น");
-      return;
-    }
-
-    activeCategory.current = 'checklist';
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-      fileInputRef.current.click();
-    }
   };
 
   const addTimestampToImage = (file: File, comment: string): Promise<Blob> => {
@@ -710,15 +678,6 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
             <Camera size={16} className="shrink-0" />
             <p>โหมดถ่ายภาพสดเท่านั้น: ปุ่มเลือกจากอัลบั้มถูกปิดใช้งานโดยระบบ</p>
           </div>
-          
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            className="hidden" 
-            accept="image/*" 
-            capture="environment" 
-            onChange={onFileChange} 
-          />
 
           {locationError && (
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3 text-amber-700 text-xs">
@@ -755,12 +714,16 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                       <h4 className="font-bold text-slate-800 text-sm">{point.label}</h4>
                       <p className="text-[10px] text-slate-500">{point.desc}</p>
                     </div>
-                    <button 
-                      onClick={() => handleCapture(point.id)}
-                      className="bg-violet-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 active:scale-95 transition-all"
-                    >
+                    <label className="bg-violet-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 active:scale-95 transition-all cursor-pointer">
                       <Plus size={14} /> เพิ่มรูป
-                    </button>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        capture="environment" 
+                        className="hidden" 
+                        onChange={(e) => onFileChange(e, point.id)} 
+                      />
+                    </label>
                   </div>
                   
                   <div className="grid grid-cols-1 gap-4">
@@ -821,13 +784,17 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                   </button>
                 </div>
               ))}
-              <button 
-                onClick={handleAddChecklist}
-                className="aspect-square border-2 border-dashed border-slate-300 rounded-lg flex flex-col items-center justify-center text-slate-400 hover:border-violet-500 hover:text-violet-500 transition-all"
-              >
+              <label className="aspect-square border-2 border-dashed border-slate-300 rounded-lg flex flex-col items-center justify-center text-slate-400 hover:border-violet-500 hover:text-violet-500 transition-all cursor-pointer">
                 <Plus size={20} />
                 <span className="text-[8px] font-bold mt-1">เพิ่มหน้า</span>
-              </button>
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  capture="environment" 
+                  className="hidden" 
+                  onChange={(e) => onFileChange(e, 'checklist')} 
+                />
+              </label>
             </div>
           </section>
         </div>
