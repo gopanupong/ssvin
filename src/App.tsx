@@ -377,19 +377,24 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
       const isLine = /Line/i.test(navigator.userAgent);
       
       // Strict validation for Live Photo
-      // For LINE: 10 seconds (LINE can be slow)
-      // For others: 15 seconds
-      const maxAllowedDiff = isLine ? 10 : 15;
+      // Increase to 600 seconds (10 minutes) to be extremely lenient for slow devices
+      const maxAllowedDiff = 600;
 
       // Filename and Metadata validation
       const fileName = file.name.toLowerCase();
       const isLikelyAlbum = fileName.includes('screenshot') || 
                             fileName.includes('fb_img') || 
                             fileName.includes('line_album') ||
-                            fileName.includes('save');
+                            fileName.includes('save') ||
+                            fileName.includes('download') ||
+                            fileName.includes('whatsapp') ||
+                            fileName.includes('telegram') ||
+                            fileName.includes('facebook') ||
+                            fileName.includes('messenger');
 
       if (diffSeconds > maxAllowedDiff || isLikelyAlbum) {
-        alert(`❌ ฟังก์ชันเลือกรูปจากอัลบั้มถูกปิดใช้งาน\n\nระบบตรวจพบว่าคุณพยายามเลือกรูปที่ไม่ได้ถ่ายสด\nกรุณากด 'เพิ่มรูป' และเลือก 'กล้องถ่ายรูป' เพื่อถ่ายใหม่เท่านั้น`);
+        const reason = isLikelyAlbum ? "ตรวจพบชื่อไฟล์ที่มาจากอัลบั้ม/แอปอื่น" : `เวลาที่ถ่ายต่างจากปัจจุบันเกินไป (${Math.round(diffSeconds)} วินาที, ขีดจำกัด ${maxAllowedDiff} วินาที)`;
+        alert(`❌ ฟังก์ชันเลือกรูปจากอัลบั้มถูกปิดใช้งาน\n\nเหตุผล: ${reason}\n\nคำแนะนำ: กรุณากด 'เพิ่มรูป' และเลือก 'กล้องถ่ายรูป' (Camera) เพื่อถ่ายใหม่และกดตกลงทันที`);
         e.target.value = '';
         return;
       }
@@ -715,10 +720,10 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                       <p className="text-[10px] text-slate-500">{point.desc}</p>
                     </div>
                     <label className="bg-violet-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 active:scale-95 transition-all cursor-pointer">
-                      <Plus size={14} /> เพิ่มรูป
+                      <Camera size={14} /> ถ่ายภาพ
                       <input 
                         type="file" 
-                        accept="image/*" 
+                        accept="image/*;capture=camera" 
                         capture="environment" 
                         className="hidden" 
                         onChange={(e) => onFileChange(e, point.id)} 
@@ -785,11 +790,11 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                 </div>
               ))}
               <label className="aspect-square border-2 border-dashed border-slate-300 rounded-lg flex flex-col items-center justify-center text-slate-400 hover:border-violet-500 hover:text-violet-500 transition-all cursor-pointer">
-                <Plus size={20} />
-                <span className="text-[8px] font-bold mt-1">เพิ่มหน้า</span>
+                <Camera size={20} />
+                <span className="text-[8px] font-bold mt-1">ถ่ายภาพ</span>
                 <input 
                   type="file" 
-                  accept="image/*" 
+                  accept="image/*;capture=camera" 
                   capture="environment" 
                   className="hidden" 
                   onChange={(e) => onFileChange(e, 'checklist')} 
