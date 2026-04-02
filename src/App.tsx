@@ -393,20 +393,20 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
       // Detect LINE Browser
       const isLine = /Line/i.test(navigator.userAgent);
       
-      // Ultra-strict validation for LINE: only 8 seconds allowed
-      // For other browsers: 15 seconds
-      const maxAllowedDiff = isLine ? 8 : 15;
+      // Ultra-strict validation for LINE: only 5 seconds allowed (impossible for album photos)
+      // For other browsers: 10 seconds
+      const maxAllowedDiff = isLine ? 5 : 10;
 
-      // Filename validation: Camera photos usually have very specific names
+      // Filename and Metadata validation
       const fileName = file.name.toLowerCase();
       const isLikelyAlbum = fileName.includes('screenshot') || 
                             fileName.includes('fb_img') || 
                             fileName.includes('line_album') ||
+                            fileName.includes('save') ||
                             (isLine && !fileName.includes('image') && !fileName.includes('cap'));
 
       if (diffSeconds > maxAllowedDiff || isLikelyAlbum) {
-        const reason = diffSeconds > maxAllowedDiff ? "รูปนี้ถูกถ่ายไว้นานเกินไป" : "รูปแบบไฟล์ไม่ถูกต้อง (ห้ามใช้รูปจากอัลบั้ม)";
-        alert(`⚠️ ปฏิเสธการอัปโหลด: ${reason}\n\nระบบอนุญาตให้ 'ถ่ายภาพสด' เท่านั้น\n\nคำแนะนำ: กรุณากดถ่ายรูปใหม่และกด 'ตกลง' ทันที (ห้ามเลือกจากคลังรูปภาพ)`);
+        alert(`❌ ฟังก์ชันเลือกรูปจากอัลบั้มถูกปิดใช้งาน\n\nระบบตรวจพบว่าคุณพยายามเลือกรูปที่ไม่ได้ถ่ายสด\nกรุณากด 'เพิ่มรูป' และเลือก 'กล้องถ่ายรูป' เพื่อถ่ายใหม่เท่านั้น`);
         
         activeCategory.current = null;
         if (fileInputRef.current) fileInputRef.current.value = '';
@@ -708,7 +708,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
         <div className="space-y-8">
           <div className="p-3 bg-violet-100 border border-violet-200 rounded-xl flex items-center gap-3 text-violet-700 text-[10px] font-bold uppercase tracking-wider">
             <Camera size={16} className="shrink-0" />
-            <p>โหมดถ่ายภาพสดเท่านั้น: ระบบจะบล็อกการเลือกรูปจากอัลบั้มโดยอัตโนมัติ</p>
+            <p>โหมดถ่ายภาพสดเท่านั้น: ปุ่มเลือกจากอัลบั้มถูกปิดใช้งานโดยระบบ</p>
           </div>
           
           <input 
