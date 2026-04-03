@@ -102,6 +102,99 @@ function getOAuth2Client() {
   );
 }
 
+// Google Sheets Helper for AI Analysis History
+async function getAnalysisHistory() {
+  const oauth2Client = getOAuth2Client();
+  if (!process.env.GOOGLE_REFRESH_TOKEN) return [];
+  oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
+  const sheets = google.sheets({ version: "v4", auth: oauth2Client });
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+  if (!spreadsheetId) return [];
+
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: "AI_Analysis!A:G",
+    });
+    const rows = response.data.values || [];
+    return rows.slice(1).map(row => ({
+      fileId: row[0],
+      fileName: row[1],
+      folderId: row[2],
+      status: row[3],
+      findings: row[4] ? row[4].split(',') : [],
+      summary: row[5],
+      analyzedAt: row[6]
+    }));
+  } catch (err: any) {
+    if (err.code === 404 || (err.response && err.response.status === 400)) {
+      await initAnalysisSheet();
+    }
+    return [];
+  }
+}
+
+async function initAnalysisSheet() {
+  const oauth2Client = getOAuth2Client();
+  if (!process.env.GOOGLE_REFRESH_TOKEN) return;
+  oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
+  const sheets = google.sheets({ version: "v4", auth: oauth2Client });
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+  if (!spreadsheetId) return;
+
+  try {
+    const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+    const sheetExists = spreadsheet.data.sheets?.some(s => s.properties?.title === "AI_Analysis");
+
+    if (!sheetExists) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [{
+            addSheet: { properties: { title: "AI_Analysis" } }
+          }]
+        }
+      });
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: "AI_Analysis!A1:G1",
+        valueInputOption: "RAW",
+        requestBody: {
+          values: [["File ID", "File Name", "Folder ID", "Status", "Findings", "Summary", "Analyzed At"]]
+        }
+      });
+    }
+  } catch (err) {
+    console.error("Failed to init analysis sheet:", err);
+  }
+}
+
+async function saveAnalysisResult(result: any) {
+  const oauth2Client = getOAuth2Client();
+  if (!process.env.GOOGLE_REFRESH_TOKEN) return;
+  oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
+  const sheets = google.sheets({ version: "v4", auth: oauth2Client });
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+  if (!spreadsheetId) return;
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: "AI_Analysis!A:G",
+    valueInputOption: "RAW",
+    requestBody: {
+      values: [[
+        result.fileId,
+        result.fileName,
+        result.folderId,
+        result.status,
+        result.findings.join(','),
+        result.summary,
+        new Date().toISOString()
+      ]]
+    }
+  });
+}
+
 // Route to start OAuth flow
 app.get("/api/auth/google", (req, res) => {
   console.log("Starting Google OAuth flow...");
@@ -171,6 +264,142 @@ app.get("/api/auth/google/callback", async (req, res) => {
     `);
   } catch (error: any) {
     res.status(500).send("Auth Failed: " + error.message);
+  }
+});
+
+// --- New Drive & AI Analysis Endpoints ---
+
+// List subfolders of a parent folder
+app.get("/api/drive/subfolders/:parentFolderId", async (req: any, res: any) => {
+  const { parentFolderId } = req.params;
+  const driveService = getDriveService();
+  if (!driveService) return res.status(500).json({ error: "Drive service not configured" });
+
+  try {
+    const response = await driveService.files.list({
+      q: `'${parentFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+      fields: "files(id, name)",
+      orderBy: "name desc"
+    });
+    res.json(response.data.files || []);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// List images in a folder and their analysis status
+app.get("/api/drive/folder/:folderId/images", async (req: any, res: any) => {
+  const { folderId } = req.params;
+  const driveService = getDriveService();
+  if (!driveService) return res.status(500).json({ error: "Drive service not configured" });
+
+  try {
+    // 1. Get images from Drive
+    const driveResponse = await driveService.files.list({
+      q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
+      fields: "files(id, name, mimeType, thumbnailLink, webViewLink)",
+      pageSize: 100
+    });
+    const images = driveResponse.data.files || [];
+
+    // 2. Get analysis history from Google Sheets
+    const history = await getAnalysisHistory();
+
+    // 3. Merge status
+    const mergedImages = images.map(img => {
+      const analysis = history.find(h => h.fileId === img.id);
+      return {
+        ...img,
+        analysis: analysis || null
+      };
+    });
+
+    res.json(mergedImages);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Analyze a single image
+app.post("/api/analyze-image", async (req: any, res: any) => {
+  const { fileId, fileName, folderId, mimeType } = req.body;
+  const driveService = getDriveService();
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!driveService || !apiKey) {
+    return res.status(500).json({ error: "Drive or Gemini not configured" });
+  }
+
+  try {
+    // 1. Check history first
+    const history = await getAnalysisHistory();
+    const existing = history.find(h => h.fileId === fileId);
+    if (existing) {
+      return res.json(existing);
+    }
+
+    // 2. Download image
+    const response = await driveService.files.get({
+      fileId,
+      alt: 'media'
+    }, { responseType: 'arraybuffer' });
+    
+    const base64 = Buffer.from(response.data as any).toString('base64');
+
+    // 3. Analyze with Gemini
+    const ai = new GoogleGenAI({ apiKey });
+    const prompt = `คุณคือผู้เชี่ยวชาญด้านความปลอดภัยและความสะอาดของสถานีไฟฟ้าแรงสูง (Power Substation)
+กรุณาวิเคราะห์รูปภาพนี้และตรวจสอบสิ่งต่อไปนี้:
+1. ความสะอาดเรียบร้อยโดยรวม (Cleanliness and Orderliness)
+2. วัชพืชหรือหญ้า (Weed): หากพบหญ้าขึ้นสูงเกิน 5 ซม. ให้รายงานว่า "Weed"
+3. คราบขี้นกหรือสิ่งแปลกปลอม (Bird Droppings): หากพบคราบสีขาวหรือสิ่งแปลกปลอมบนอุปกรณ์ไฟฟ้า ให้รายงานว่า "Bird Droppings"
+
+ตอบกลับในรูปแบบ JSON เท่านั้น โดยมีโครงสร้างดังนี้:
+{
+  "status": "Red" หรือ "Green" (Red หากพบปัญหา Weed หรือ Bird Droppings, Green หากสะอาดเรียบร้อย),
+  "findings": ["Weed", "Bird Droppings", ...], (อาเรย์ของคำหลักที่พบ),
+  "summary": "สรุปผลการวิเคราะห์สั้นๆ เป็นภาษาไทย"
+}`;
+
+    const genResult = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [
+        { 
+          parts: [
+            { text: prompt }, 
+            { inlineData: { data: base64, mimeType: mimeType || 'image/jpeg' } }
+          ] 
+        }
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            status: { type: Type.STRING },
+            findings: { type: Type.ARRAY, items: { type: Type.STRING } },
+            summary: { type: Type.STRING }
+          },
+          required: ["status", "findings", "summary"]
+        }
+      }
+    });
+
+    const analysisResult = JSON.parse(genResult.text || '{}');
+    const finalResult = {
+      fileId,
+      fileName,
+      folderId,
+      ...analysisResult
+    };
+
+    // 4. Save to Google Sheets
+    await saveAnalysisResult(finalResult);
+
+    res.json(finalResult);
+  } catch (error: any) {
+    console.error("Analysis error:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -737,7 +966,7 @@ app.get("/api/dashboard-stats", async (req, res) => {
 
 // AI Analysis Endpoint
 app.post("/api/analyze-substation", async (req: any, res: any) => {
-  const { substationName, month, year } = req.body;
+  const { substationName, month, year, dryRun } = req.body;
   const driveService = getDriveService();
   const apiKey = process.env.GEMINI_API_KEY;
 
@@ -776,8 +1005,15 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
       return res.json({ 
         status: 'Green', 
         findings: [], 
-        summary: `ไม่พบข้อมูลการถ่ายภาพของเดือน ${month}/${year}` 
+        summary: `ไม่พบข้อมูลการถ่ายภาพของเดือน ${month}/${year}`,
+        folderId: null
       });
+    }
+
+    const folderId = matchingFolders[0].id;
+
+    if (dryRun) {
+      return res.json({ folderId });
     }
 
     // 4. Collect representative images (max 5 from different days/categories)
@@ -871,7 +1107,7 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
       }
     }
 
-    res.json(analysis);
+    res.json({ ...analysis, folderId });
 
   } catch (error: any) {
     console.error("AI Analysis error:", error);

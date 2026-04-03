@@ -14,7 +14,8 @@ import {
   Image as ImageIcon,
   FileText,
   Plus,
-  MonitorOff
+  MonitorOff,
+  Clock
 } from 'lucide-react';
 import { cn, SUBSTATIONS, InspectionLog } from './constants';
 import { format } from 'date-fns';
@@ -879,6 +880,82 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   const [activeTab, setActiveTab] = useState<'progress' | 'health'>('progress');
   const [healthIndex, setHealthIndex] = useState<any[]>([]);
   const [analyzing, setAnalyzing] = useState<string | null>(null);
+  const [selectedSubstationForAnalysis, setSelectedSubstationForAnalysis] = useState<string | null>(null);
+  const [imagesInFolder, setImagesInFolder] = useState<any[]>([]);
+  const [isFetchingImages, setIsFetchingImages] = useState(false);
+  const [isBatchAnalyzing, setIsBatchAnalyzing] = useState(false);
+  const [analysisSummary, setAnalysisSummary] = useState({ total: 0, clean: 0, issues: 0, weeds: 0, birdDroppings: 0 });
+
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+
+  const fetchImagesInFolder = async (folderId: string) => {
+    setSelectedFolderId(folderId);
+    setIsFetchingImages(true);
+    try {
+      const res = await fetch(`/api/drive/folder/${folderId}/images`);
+      const data = await res.json();
+      setImagesInFolder(data);
+      updateAnalysisSummary(data);
+    } catch (err) {
+      console.error("Failed to fetch images:", err);
+    } finally {
+      setIsFetchingImages(false);
+    }
+  };
+
+  const updateAnalysisSummary = (images: any[]) => {
+    const summary = images.reduce((acc, img) => {
+      acc.total++;
+      if (img.analysis) {
+        if (img.analysis.status === 'Green') acc.clean++;
+        else {
+          acc.issues++;
+          if (img.analysis.findings.includes('Weed')) acc.weeds++;
+          if (img.analysis.findings.includes('Bird Droppings')) acc.birdDroppings++;
+        }
+      }
+      return acc;
+    }, { total: 0, clean: 0, issues: 0, weeds: 0, birdDroppings: 0 });
+    setAnalysisSummary(summary);
+  };
+
+  const handleAnalyzeImage = async (image: any, folderId: string) => {
+    try {
+      const res = await fetch('/api/analyze-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileId: image.id,
+          fileName: image.name,
+          folderId: folderId,
+          mimeType: image.mimeType
+        })
+      });
+      const result = await res.json();
+      
+      setImagesInFolder(prev => {
+        const updated = prev.map(img => img.id === image.id ? { ...img, analysis: result } : img);
+        updateAnalysisSummary(updated);
+        return updated;
+      });
+      return result;
+    } catch (err) {
+      console.error("Failed to analyze image:", err);
+    }
+  };
+
+  const handleBatchAnalyze = async (folderId: string) => {
+    setIsBatchAnalyzing(true);
+    const toAnalyze = imagesInFolder.filter(img => !img.analysis);
+    
+    for (const img of toAnalyze) {
+      await handleAnalyzeImage(img, folderId);
+    }
+    
+    setIsBatchAnalyzing(false);
+    // Refresh health index logs after batch
+    fetchHealthIndex();
+  };
 
   const months = [
     { value: 0, label: 'มกราคม' },
@@ -1273,18 +1350,44 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                       </div>
                     )}
 
-                    <Button 
-                      onClick={() => handleAnalyze(sub.name)} 
-                      disabled={isAnalyzing}
-                      className="w-full py-2 text-xs mt-2"
-                      variant={health ? "outline" : "primary"}
-                    >
-                      {isAnalyzing ? (
-                        <><Loader2 className="animate-spin w-3 h-3" /> กำลังวิเคราะห์...</>
-                      ) : (
-                        <><LayoutDashboard size={14} /> {health ? 'วิเคราะห์ใหม่' : 'วิเคราะห์ภาพถ่าย'}</>
-                      )}
-                    </Button>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      <Button 
+                        onClick={() => handleAnalyze(sub.name)} 
+                        disabled={isAnalyzing}
+                        className="py-2 text-[10px]"
+                        variant={health ? "outline" : "primary"}
+                      >
+                        {isAnalyzing ? (
+                          <><Loader2 className="animate-spin w-3 h-3" /> วิเคราะห์...</>
+                        ) : (
+                          <><LayoutDashboard size={12} /> {health ? 'วิเคราะห์ใหม่' : 'วิเคราะห์ด่วน'}</>
+                        )}
+                      </Button>
+                      <Button 
+                        onClick={async () => {
+                          setSelectedSubstationForAnalysis(sub.name);
+                          setImagesInFolder([]);
+                          // Find the folder ID for this substation/month
+                          try {
+                            const res = await fetch(`/api/analyze-substation`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ substationName: sub.name, month: selectedMonth + 1, year: selectedYear, dryRun: true })
+                            });
+                            const data = await res.json();
+                            if (data.folderId) {
+                              fetchImagesInFolder(data.folderId);
+                            }
+                          } catch (err) {
+                            console.error(err);
+                          }
+                        }}
+                        className="py-2 text-[10px]"
+                        variant="outline"
+                      >
+                        <ImageIcon size={12} /> ดูรายรูปภาพ
+                      </Button>
+                    </div>
                   </Card>
                 </div>
               );
@@ -1292,6 +1395,148 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
           </div>
         )}
       </div>
+
+      {/* Image Analysis Detail Modal */}
+      <AnimatePresence>
+        {selectedSubstationForAnalysis && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedSubstationForAnalysis(null)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-5xl bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0 z-10">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900">รายละเอียดการวิเคราะห์: {selectedSubstationForAnalysis}</h3>
+                  <p className="text-xs font-bold text-violet-600 uppercase tracking-wider">
+                    ประจำเดือน {months[selectedMonth].label} {selectedYear + 543}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Button 
+                    onClick={() => selectedFolderId && handleBatchAnalyze(selectedFolderId)}
+                    disabled={isBatchAnalyzing || imagesInFolder.length === 0 || !selectedFolderId}
+                    className="hidden md:flex"
+                  >
+                    {isBatchAnalyzing ? <><Loader2 className="animate-spin w-3 h-3" /> กำลังวิเคราะห์...</> : <><LayoutDashboard size={14} /> วิเคราะห์ภาพที่เหลือ</>}
+                  </Button>
+                  <button 
+                    onClick={() => {
+                      setSelectedSubstationForAnalysis(null);
+                      setSelectedFolderId(null);
+                    }}
+                    className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors"
+                  >
+                    <Plus size={24} className="rotate-45" />
+                  </button>
+                </div>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
+                {/* Summary Dashboard */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+                  <Card className="p-4 text-center">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">รูปภาพทั้งหมด</p>
+                    <h4 className="text-2xl font-bold text-slate-800">{analysisSummary.total}</h4>
+                  </Card>
+                  <Card className="p-4 text-center border-emerald-100 bg-emerald-50/30">
+                    <p className="text-[10px] text-emerald-600 font-bold uppercase mb-1">สะอาดปกติ</p>
+                    <h4 className="text-2xl font-bold text-emerald-600">{analysisSummary.clean}</h4>
+                  </Card>
+                  <Card className="p-4 text-center border-rose-100 bg-rose-50/30">
+                    <p className="text-[10px] text-rose-600 font-bold uppercase mb-1">พบปัญหา</p>
+                    <h4 className="text-2xl font-bold text-rose-600">{analysisSummary.issues}</h4>
+                  </Card>
+                  <Card className="p-4 text-center">
+                    <p className="text-[10px] text-amber-600 font-bold uppercase mb-1">หญ้า (Weed)</p>
+                    <h4 className="text-2xl font-bold text-amber-600">{analysisSummary.weeds}</h4>
+                  </Card>
+                  <Card className="p-4 text-center">
+                    <p className="text-[10px] text-violet-600 font-bold uppercase mb-1">ขี้นก (Bird)</p>
+                    <h4 className="text-2xl font-bold text-violet-600">{analysisSummary.birdDroppings}</h4>
+                  </Card>
+                </div>
+
+                {isFetchingImages ? (
+                  <div className="flex flex-col items-center justify-center py-20 gap-4">
+                    <Loader2 className="animate-spin text-violet-600 w-10 h-10" />
+                    <p className="text-slate-400 italic">กำลังดึงข้อมูลรูปภาพจาก Google Drive...</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                    {imagesInFolder.map(img => (
+                      <div key={img.id} className="group relative bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm hover:shadow-md transition-all">
+                        <div className="aspect-square bg-slate-100 relative">
+                          {img.thumbnailLink ? (
+                            <img 
+                              src={img.thumbnailLink.replace('=s220', '=s400')} 
+                              alt={img.name}
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-slate-300">
+                              <ImageIcon size={32} />
+                            </div>
+                          )}
+                          
+                          {/* Status Badge */}
+                          <div className="absolute top-2 right-2">
+                            {img.analysis ? (
+                              <span className={cn(
+                                "w-6 h-6 rounded-full flex items-center justify-center shadow-lg",
+                                img.analysis.status === 'Green' ? "bg-emerald-500 text-white" : "bg-rose-500 text-white"
+                              )}>
+                                {img.analysis.status === 'Green' ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+                              </span>
+                            ) : (
+                              <span className="w-6 h-6 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center shadow-lg">
+                                <Clock size={14} />
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div className="p-3">
+                          <p className="text-[10px] font-bold text-slate-800 truncate mb-1">{img.name}</p>
+                          {img.analysis ? (
+                            <div className="space-y-1">
+                              <div className="flex flex-wrap gap-1">
+                                {img.analysis.findings.map((f: string) => (
+                                  <span key={f} className="text-[8px] bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded font-bold">
+                                    {f === 'Weed' ? 'หญ้า' : (f === 'Bird Droppings' ? 'ขี้นก' : f)}
+                                  </span>
+                                ))}
+                              </div>
+                              <p className="text-[8px] text-slate-400 italic line-clamp-2">{img.analysis.summary}</p>
+                            </div>
+                          ) : (
+                            <Button 
+                              onClick={() => selectedFolderId && handleAnalyzeImage(img, selectedFolderId)}
+                              className="w-full py-1 text-[8px] h-auto"
+                              variant="outline"
+                            >
+                              วิเคราะห์ภาพนี้
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Pending Substations Modal */}
       <AnimatePresence>
