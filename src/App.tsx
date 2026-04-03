@@ -42,8 +42,11 @@ const Button = ({ className, variant = 'primary', ...props }: React.ButtonHTMLAt
   );
 };
 
-const Card = ({ children, className }: { children: React.ReactNode; className?: string }) => (
-  <div className={cn('bg-white rounded-2xl shadow-sm border border-slate-100 p-6', className)}>
+const Card = ({ children, className, onClick }: { children: React.ReactNode; className?: string; onClick?: () => void }) => (
+  <div 
+    onClick={onClick}
+    className={cn('bg-white rounded-2xl shadow-sm border border-slate-100 p-6', className)}
+  >
     {children}
   </div>
 );
@@ -873,6 +876,9 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [showPendingModal, setShowPendingModal] = useState(false);
   const [showInspectedModal, setShowInspectedModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'progress' | 'health'>('progress');
+  const [healthIndex, setHealthIndex] = useState<any[]>([]);
+  const [analyzing, setAnalyzing] = useState<string | null>(null);
 
   const months = [
     { value: 0, label: 'มกราคม' },
@@ -892,6 +898,12 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   // Show years from 2567 (2024) to 2575 (2032)
   const years = Array.from({ length: 9 }, (_, i) => 2024 + i);
 
+  const fetchHealthIndex = () => {
+    fetch(`/api/health-index?month=${selectedMonth + 1}&year=${selectedYear}`)
+      .then(res => res.json())
+      .then(data => setHealthIndex(data));
+  };
+
   useEffect(() => {
     setLoading(true);
     fetch(`/api/dashboard-stats?month=${selectedMonth + 1}&year=${selectedYear}`)
@@ -900,7 +912,30 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
         setStats(data);
         setLoading(false);
       });
+    fetchHealthIndex();
   }, [selectedMonth, selectedYear]);
+
+  const handleAnalyze = async (substationName: string) => {
+    setAnalyzing(substationName);
+    try {
+      const res = await fetch('/api/analyze-substation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ substationName, month: selectedMonth + 1, year: selectedYear })
+      });
+      const data = await res.json();
+      if (data.error) {
+        alert(data.error);
+      } else {
+        fetchHealthIndex();
+      }
+    } catch (err) {
+      console.error(err);
+      alert("เกิดข้อผิดพลาดในการวิเคราะห์");
+    } finally {
+      setAnalyzing(null);
+    }
+  };
 
   const REQUIRED_CATEGORIES = ['building', 'yard', 'roof', 'annunciation', 'battery', 'grounding', 'security', 'fence', 'lighting', 'checklist'];
 
@@ -952,6 +987,27 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
             <h2 className="text-2xl font-bold text-slate-900">Executive Dashboard</h2>
           </div>
           
+          <div className="flex bg-slate-200 p-1 rounded-xl">
+            <button 
+              onClick={() => setActiveTab('progress')}
+              className={cn(
+                "px-4 py-2 rounded-lg text-xs font-bold transition-all",
+                activeTab === 'progress' ? "bg-white text-violet-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              )}
+            >
+              ความคืบหน้า
+            </button>
+            <button 
+              onClick={() => setActiveTab('health')}
+              className={cn(
+                "px-4 py-2 rounded-lg text-xs font-bold transition-all",
+                activeTab === 'health' ? "bg-white text-violet-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              )}
+            >
+              Health Index
+            </button>
+          </div>
+
           <div className="flex flex-col items-end gap-1">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">เลือกเดือนที่ต้องการตรวจสอบ</span>
             <div className="flex gap-2">
@@ -977,7 +1033,9 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        {activeTab === 'progress' ? (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div key="total" className="cursor-pointer" onClick={() => setShowInspectedModal(true)}>
             <Card className="bg-violet-600 text-white border-none shadow-lg shadow-violet-200 hover:bg-violet-700 transition-all group">
               <div className="flex justify-between items-start">
@@ -1162,6 +1220,77 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
             </table>
           </div>
         </Card>
+          </>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+            {SUBSTATIONS.map(sub => {
+              const health = healthIndex.find(h => h.substation_name === sub.name);
+              const statusColor = health?.status === 'Red' ? 'bg-rose-500' : (health?.status === 'Green' ? 'bg-emerald-500' : 'bg-slate-200');
+              const isAnalyzing = analyzing === sub.name;
+
+              return (
+                <div key={sub.id}>
+                  <Card className="relative overflow-hidden group hover:shadow-md transition-all h-full">
+                    <div className={cn("absolute top-0 right-0 w-2 h-full transition-colors", statusColor)} />
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 group-hover:text-violet-500 transition-colors">
+                        <MonitorOff size={20} />
+                      </div>
+                      {health && (
+                        <span className={cn(
+                          "text-[10px] font-bold px-2 py-1 rounded-full",
+                          health.status === 'Red' ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-600"
+                        )}>
+                          {health.status === 'Red' ? 'พบปัญหา' : 'ปกติ'}
+                        </span>
+                      )}
+                    </div>
+                    
+                    <h3 className="font-bold text-slate-800 text-sm mb-1">{sub.name}</h3>
+                    <p className="text-[10px] text-slate-400 font-medium mb-4">Health Index ด้านความสะอาด</p>
+
+                    {health ? (
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap gap-1">
+                          {health.findings && health.findings.length > 0 ? (
+                            health.findings.map((f: string) => (
+                              <span key={f} className="text-[10px] bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full font-bold">
+                                {f === 'Weed' ? 'หญ้าขึ้นสูง' : (f === 'Bird Droppings' ? 'คราบขี้นก' : f)}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-[10px] bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full font-bold">สะอาดเรียบร้อย</span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-500 leading-relaxed bg-slate-50 p-2 rounded-lg border border-slate-100 italic">
+                          "{health.summary}"
+                        </p>
+                        <p className="text-[8px] text-slate-300 text-right">วิเคราะห์เมื่อ: {format(new Date(health.analyzed_at), 'd MMM yy HH:mm', { locale: th })}</p>
+                      </div>
+                    ) : (
+                      <div className="py-6 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 mb-4">
+                        <p className="text-[10px] text-slate-400 italic">ยังไม่ได้วิเคราะห์ภาพถ่าย</p>
+                      </div>
+                    )}
+
+                    <Button 
+                      onClick={() => handleAnalyze(sub.name)} 
+                      disabled={isAnalyzing}
+                      className="w-full py-2 text-xs mt-2"
+                      variant={health ? "outline" : "primary"}
+                    >
+                      {isAnalyzing ? (
+                        <><Loader2 className="animate-spin w-3 h-3" /> กำลังวิเคราะห์...</>
+                      ) : (
+                        <><LayoutDashboard size={14} /> {health ? 'วิเคราะห์ใหม่' : 'วิเคราะห์ภาพถ่าย'}</>
+                      )}
+                    </Button>
+                  </Card>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Pending Substations Modal */}

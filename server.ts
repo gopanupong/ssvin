@@ -2,6 +2,7 @@ import express from "express";
 import multer from "multer";
 import { google } from "googleapis";
 import { Pool } from "pg";
+import { GoogleGenAI, Type } from "@google/genai";
 import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
@@ -58,6 +59,16 @@ async function initDb() {
       CREATE TABLE IF NOT EXISTS substation_master_folders (
         substation_name TEXT PRIMARY KEY,
         folder_id TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS health_index_logs (
+        substation_name TEXT NOT NULL,
+        month INTEGER NOT NULL,
+        year INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        findings TEXT[],
+        summary TEXT,
+        analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (substation_name, month, year)
       );
     `);
     console.log("PostgreSQL initialized.");
@@ -679,7 +690,6 @@ app.get("/api/dashboard-stats", async (req, res) => {
         status: row[6] || "completed",
         categories: categories
       };
-      console.log(`Log entry ${index}: ${logEntry.substation_name}, categories: ${logEntry.categories.join(',')}`);
       return logEntry;
     }).filter(log => log !== null) as any[];
 
@@ -722,6 +732,167 @@ app.get("/api/dashboard-stats", async (req, res) => {
       errorMessage = "สิทธิ์การเข้าถึง Google Sheets หมดอายุ (invalid_grant) กรุณาแจ้งผู้ดูแลระบบให้ทำการต่ออายุ Token ใหม่";
     }
     res.status(500).json({ error: "Failed to fetch stats: " + errorMessage });
+  }
+});
+
+// AI Analysis Endpoint
+app.post("/api/analyze-substation", async (req: any, res: any) => {
+  const { substationName, month, year } = req.body;
+  const driveService = getDriveService();
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!driveService || !apiKey) {
+    return res.status(500).json({ error: "Google Drive or Gemini API not configured" });
+  }
+
+  try {
+    const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || "1IzXUWJfucyb47Dr32QSVIxBKmoMrWF6J";
+    
+    // 1. Find Main Substation Folder
+    const mainFolderQuery = await driveService.files.list({
+      q: `name = '${substationName}' and mimeType = 'application/vnd.google-apps.folder' and '${parentFolderId}' in parents and trashed = false`,
+      fields: "files(id)",
+    });
+
+    if (!mainFolderQuery.data.files || mainFolderQuery.data.files.length === 0) {
+      return res.status(404).json({ error: "Substation folder not found" });
+    }
+    const mainFolderId = mainFolderQuery.data.files[0].id;
+
+    // 2. List all subfolders (daily folders)
+    const subfoldersQuery = await driveService.files.list({
+      q: `'${mainFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+      fields: "files(id, name)",
+    });
+
+    const subfolders = subfoldersQuery.data.files || [];
+    
+    // 3. Filter subfolders for the requested month/year
+    // Format is substationName_DDMMYY
+    const targetSuffix = `${String(month).padStart(2, '0')}${String(year).slice(-2)}`;
+    const matchingFolders = subfolders.filter(f => f.name?.endsWith(targetSuffix));
+
+    if (matchingFolders.length === 0) {
+      return res.json({ 
+        status: 'Green', 
+        findings: [], 
+        summary: `ไม่พบข้อมูลการถ่ายภาพของเดือน ${month}/${year}` 
+      });
+    }
+
+    // 4. Collect representative images (max 5 from different days/categories)
+    const allImages: any[] = [];
+    for (const folder of matchingFolders) {
+      const filesQuery = await driveService.files.list({
+        q: `'${folder.id}' in parents and mimeType contains 'image/' and trashed = false`,
+        fields: "files(id, name, mimeType)",
+        pageSize: 3
+      });
+      if (filesQuery.data.files) {
+        allImages.push(...filesQuery.data.files);
+      }
+      if (allImages.length >= 5) break;
+    }
+
+    if (allImages.length === 0) {
+      return res.json({ 
+        status: 'Green', 
+        findings: [], 
+        summary: `ไม่พบรูปภาพในเดือน ${month}/${year}` 
+      });
+    }
+
+    // 5. Download images and convert to base64
+    const imageParts = [];
+    for (const img of allImages) {
+      const response = await driveService.files.get({
+        fileId: img.id,
+        alt: 'media'
+      }, { responseType: 'arraybuffer' });
+      
+      const base64 = Buffer.from(response.data as any).toString('base64');
+      imageParts.push({
+        inlineData: {
+          data: base64,
+          mimeType: img.mimeType
+        }
+      });
+    }
+
+    // 6. Analyze with Gemini
+    const ai = new GoogleGenAI({ apiKey });
+    const prompt = `คุณคือผู้เชี่ยวชาญด้านความปลอดภัยและความสะอาดของสถานีไฟฟ้าแรงสูง (Power Substation)
+กรุณาวิเคราะห์รูปภาพเหล่านี้และตรวจสอบสิ่งต่อไปนี้:
+1. ความสะอาดเรียบร้อยโดยรวม (Cleanliness and Orderliness)
+2. วัชพืชหรือหญ้า (Weed): หากพบหญ้าขึ้นสูงเกิน 5 ซม. ให้รายงานว่า "Weed"
+3. คราบขี้นกหรือสิ่งแปลกปลอม (Bird Droppings): หากพบคราบสีขาวหรือสิ่งแปลกปลอมบนอุปกรณ์ไฟฟ้า ให้รายงานว่า "Bird Droppings"
+
+ตอบกลับในรูปแบบ JSON เท่านั้น โดยมีโครงสร้างดังนี้:
+{
+  "status": "Red" หรือ "Green" (Red หากพบปัญหา Weed หรือ Bird Droppings, Green หากสะอาดเรียบร้อย),
+  "findings": ["Weed", "Bird Droppings", ...], (อาเรย์ของคำหลักที่พบ),
+  "summary": "สรุปผลการวิเคราะห์สั้นๆ เป็นภาษาไทย"
+}`;
+
+    const result = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [
+        { parts: [{ text: prompt }, ...imageParts] }
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            status: { type: Type.STRING },
+            findings: { type: Type.ARRAY, items: { type: Type.STRING } },
+            summary: { type: Type.STRING }
+          },
+          required: ["status", "findings", "summary"]
+        }
+      }
+    });
+
+    const analysis = JSON.parse(result.text || '{}');
+    
+    // 7. Save to DB
+    const pool = getDbPool();
+    if (pool) {
+      try {
+        await pool.query(
+          `INSERT INTO health_index_logs (substation_name, month, year, status, findings, summary)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (substation_name, month, year) 
+           DO UPDATE SET status = EXCLUDED.status, findings = EXCLUDED.findings, summary = EXCLUDED.summary, analyzed_at = CURRENT_TIMESTAMP`,
+          [substationName, month, year, analysis.status, analysis.findings, analysis.summary]
+        );
+      } catch (dbErr) {
+        console.error("Failed to save health index to DB:", dbErr);
+      }
+    }
+
+    res.json(analysis);
+
+  } catch (error: any) {
+    console.error("AI Analysis error:", error);
+    res.status(500).json({ error: "Failed to analyze: " + error.message });
+  }
+});
+
+app.get("/api/health-index", async (req, res) => {
+  const { month, year } = req.query;
+  const pool = getDbPool();
+  if (!pool) return res.json([]);
+
+  try {
+    const result = await pool.query(
+      "SELECT * FROM health_index_logs WHERE month = $1 AND year = $2",
+      [month, year]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Failed to fetch health index:", err);
+    res.status(500).json({ error: "Failed to fetch health index" });
   }
 });
 
