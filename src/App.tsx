@@ -1001,9 +1001,13 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
         body: JSON.stringify({ substationName, month: selectedMonth + 1, year: selectedYear })
       });
       const data = await res.json();
+      console.log("Analysis result:", data);
       if (data.error) {
         alert(data.error);
       } else {
+        if (data.summary && data.summary.includes("ไม่พบ")) {
+          alert(data.summary);
+        }
         fetchHealthIndex();
       }
     } catch (err) {

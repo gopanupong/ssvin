@@ -986,16 +986,28 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
   try {
     const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || "1IzXUWJfucyb47Dr32QSVIxBKmoMrWF6J";
     
-    // 1. Find Main Substation Folder
+    // 0. Verify Parent Folder Access
+    try {
+      await driveService.files.get({ fileId: parentFolderId, fields: "id, name" });
+    } catch (err: any) {
+      console.error("Parent folder access error:", err);
+      return res.status(400).json({ error: `ไม่สามารถเข้าถึงโฟลเดอร์หลักได้ (ID: ${parentFolderId}) กรุณาตรวจสอบสิทธิ์การเข้าถึงหรือ ID โฟลเดอร์` });
+    }
+    console.log(`Searching for substation folder: ${substationName} in parent: ${parentFolderId}`);
     const mainFolderQuery = await driveService.files.list({
-      q: `name = '${substationName}' and mimeType = 'application/vnd.google-apps.folder' and '${parentFolderId}' in parents and trashed = false`,
-      fields: "files(id)",
+      q: `name contains '${substationName}' and mimeType = 'application/vnd.google-apps.folder' and '${parentFolderId}' in parents and trashed = false`,
+      fields: "files(id, name)",
     });
 
     if (!mainFolderQuery.data.files || mainFolderQuery.data.files.length === 0) {
-      return res.status(404).json({ error: "Substation folder not found" });
+      console.log(`Substation folder not found for: ${substationName}`);
+      return res.status(404).json({ error: `ไม่พบโฟลเดอร์สถานี "${substationName}" ใน Google Drive กรุณาตรวจสอบชื่อโฟลเดอร์` });
     }
-    const mainFolderId = mainFolderQuery.data.files[0].id;
+    
+    // Find the best match (exact or closest)
+    const bestMatch = mainFolderQuery.data.files.find(f => f.name === substationName) || mainFolderQuery.data.files[0];
+    const mainFolderId = bestMatch.id;
+    console.log(`Found main folder: ${bestMatch.name} (${mainFolderId})`);
 
     // 2. List all subfolders (daily folders)
     const subfoldersQuery = await driveService.files.list({
@@ -1006,17 +1018,47 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
     const subfolders = subfoldersQuery.data.files || [];
     
     // 3. Filter subfolders for the requested month/year
-    // Format is substationName_DDMMYY
-    const targetSuffix = `${String(month).padStart(2, '0')}${String(year).slice(-2)}`;
-    const matchingFolders = subfolders.filter(f => f.name?.endsWith(targetSuffix));
+    // Support multiple formats: DDMMYY, DDMMYYYY, or just MMYY/MMYYYY
+    const ceYearShort = String(year).slice(-2);
+    const ceYearFull = String(year);
+    const beYearShort = String(year + 543).slice(-2);
+    const beYearFull = String(year + 543);
+    const mm = String(month).padStart(2, '0');
+    
+    const patterns = [
+      `${mm}${ceYearShort}`,
+      `${mm}${ceYearFull}`,
+      `${mm}${beYearShort}`,
+      `${mm}${beYearFull}`
+    ];
+    
+    console.log(`Searching for folders containing patterns: ${patterns.join(', ')}`);
+    const matchingFolders = subfolders.filter(f => {
+      const name = f.name || "";
+      return patterns.some(p => name.includes(p));
+    });
 
     if (matchingFolders.length === 0) {
-      return res.json({ 
+      const noDataResult = { 
         status: 'Green', 
         findings: [], 
         summary: `ไม่พบข้อมูลการถ่ายภาพของเดือน ${month}/${year}`,
         folderId: null
-      });
+      };
+      
+      // Save "No Data" state to DB so it shows up
+      const pool = getDbPool();
+      if (pool) {
+        await pool.query(
+          `INSERT INTO health_index_logs (substation_name, month, year, status, findings, summary)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (substation_name, month, year) 
+           DO UPDATE SET status = EXCLUDED.status, findings = EXCLUDED.findings, summary = EXCLUDED.summary, analyzed_at = CURRENT_TIMESTAMP`,
+          [substationName, month, year, noDataResult.status, noDataResult.findings, noDataResult.summary]
+        );
+      }
+      
+      return res.json(noDataResult);
     }
 
     const folderId = matchingFolders[0].id;
@@ -1040,11 +1082,24 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
     }
 
     if (allImages.length === 0) {
-      return res.json({ 
+      const noImageResult = { 
         status: 'Green', 
         findings: [], 
         summary: `ไม่พบรูปภาพในเดือน ${month}/${year}` 
-      });
+      };
+      
+      const pool = getDbPool();
+      if (pool) {
+        await pool.query(
+          `INSERT INTO health_index_logs (substation_name, month, year, status, findings, summary)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (substation_name, month, year) 
+           DO UPDATE SET status = EXCLUDED.status, findings = EXCLUDED.findings, summary = EXCLUDED.summary, analyzed_at = CURRENT_TIMESTAMP`,
+          [substationName, month, year, noImageResult.status, noImageResult.findings, noImageResult.summary]
+        );
+      }
+      
+      return res.json(noImageResult);
     }
 
     // 5. Download images and convert to base64
@@ -1104,13 +1159,14 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
     const pool = getDbPool();
     if (pool) {
       try {
-        await pool.query(
+        const dbResult = await pool.query(
           `INSERT INTO health_index_logs (substation_name, month, year, status, findings, summary)
            VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT (substation_name, month, year) 
            DO UPDATE SET status = EXCLUDED.status, findings = EXCLUDED.findings, summary = EXCLUDED.summary, analyzed_at = CURRENT_TIMESTAMP`,
           [substationName, month, year, analysis.status, analysis.findings, analysis.summary]
         );
+        console.log(`Saved analysis to DB for ${substationName}: ${dbResult.rowCount} rows affected`);
       } catch (dbErr) {
         console.error("Failed to save health index to DB:", dbErr);
       }
