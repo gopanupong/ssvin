@@ -82,7 +82,7 @@ const folderCreationLocks = new Set<string>();
 
 // Google Drive & Sheets Setup
 const SCOPES = [
-  "https://www.googleapis.com/auth/drive.file",
+  "https://www.googleapis.com/auth/drive",
   "https://www.googleapis.com/auth/spreadsheets"
 ];
 
@@ -489,7 +489,7 @@ app.post("/api/init-upload", async (req: any, res: any) => {
       timeZone: "Asia/Bangkok"
     }).format(dateObj).replace(/\//g, ""); 
     
-    const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || "1IzXUWJfucyb47Dr32QSVIxBKmoMrWF6J";
+    const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || "1IzXUWJfucyb47Dr32QSVIxBKmoMrWF6J";
 
     // 1. Find or Create Main Substation Folder (Use DB for consistency)
     let mainFolderId;
@@ -673,7 +673,7 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
       timeZone: "Asia/Bangkok"
     }).format(dateObj).replace(/\//g, ""); 
     
-    const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || "1IzXUWJfucyb47Dr32QSVIxBKmoMrWF6J";
+    const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || "1IzXUWJfucyb47Dr32QSVIxBKmoMrWF6J";
 
     // 1. Find or Create Main Substation Folder (e.g., "สถานีไฟฟ้านครชัยศรี 1")
     let mainFolderId;
@@ -984,7 +984,7 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
   }
 
   try {
-    const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || "1IzXUWJfucyb47Dr32QSVIxBKmoMrWF6J";
+    const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || "1IzXUWJfucyb47Dr32QSVIxBKmoMrWF6J";
     
     // 0. Verify Parent Folder Access
     try {
