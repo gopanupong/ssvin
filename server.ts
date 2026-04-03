@@ -86,6 +86,35 @@ const SCOPES = [
   "https://www.googleapis.com/auth/spreadsheets"
 ];
 
+// Helper for Gemini API with retry logic
+async function generateContentWithRetry(ai: GoogleGenAI, params: any, maxRetries = 3) {
+  let lastError: any;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await ai.models.generateContent(params);
+    } catch (err: any) {
+      lastError = err;
+      const errorStr = JSON.stringify(err);
+      const isRetryable = 
+        err.status === 'UNAVAILABLE' || 
+        err.code === 503 || 
+        err.status === 'RESOURCE_EXHAUSTED' || 
+        err.code === 429 ||
+        errorStr.includes("503") ||
+        errorStr.includes("UNAVAILABLE");
+
+      if (isRetryable && i < maxRetries - 1) {
+        const delay = Math.pow(2, i) * 2000 + Math.random() * 1000;
+        console.log(`Gemini API busy (attempt ${i + 1}/${maxRetries}). Retrying in ${Math.round(delay)}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
+}
+
 // OAuth2 Client Setup
 function getOAuth2Client() {
   const appUrl = (process.env.APP_URL || '').replace(/\/$/, '');
@@ -364,7 +393,7 @@ app.post("/api/analyze-image", async (req: any, res: any) => {
   "summary": "สรุปผลการวิเคราะห์สั้นๆ เป็นภาษาไทย"
 }`;
 
-    const genResult = await ai.models.generateContent({
+    const genResult = await generateContentWithRetry(ai, {
       model: "gemini-3-flash-preview",
       contents: [
         { 
@@ -1134,7 +1163,7 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
   "summary": "สรุปผลการวิเคราะห์สั้นๆ เป็นภาษาไทย"
 }`;
 
-    const result = await ai.models.generateContent({
+    const result = await generateContentWithRetry(ai, {
       model: "gemini-3-flash-preview",
       contents: [
         { parts: [{ text: prompt }, ...imageParts] }

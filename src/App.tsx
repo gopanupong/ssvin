@@ -933,6 +933,17 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
       });
       const result = await res.json();
       
+      if (result.error) {
+        let errorMessage = result.error;
+        if (typeof result.error === 'object' && result.error.code === 503) {
+          errorMessage = "ระบบวิเคราะห์ภาพ (Gemini) กำลังทำงานหนักในขณะนี้ กรุณารอสักครู่แล้วลองใหม่อีกครั้ง (Error 503)";
+        } else if (typeof result.error === 'string' && result.error.includes("503")) {
+          errorMessage = "ระบบวิเคราะห์ภาพ (Gemini) กำลังทำงานหนักในขณะนี้ กรุณารอสักครู่แล้วลองใหม่อีกครั้ง (Error 503)";
+        }
+        alert(errorMessage);
+        return result;
+      }
+
       setImagesInFolder(prev => {
         const updated = prev.map(img => img.id === image.id ? { ...img, analysis: result } : img);
         updateAnalysisSummary(updated);
@@ -1003,7 +1014,13 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
       const data = await res.json();
       console.log("Analysis result:", data);
       if (data.error) {
-        alert(data.error);
+        let errorMessage = data.error;
+        if (typeof data.error === 'object' && data.error.code === 503) {
+          errorMessage = "ระบบวิเคราะห์ภาพ (Gemini) กำลังทำงานหนักในขณะนี้ กรุณารอสักครู่แล้วลองใหม่อีกครั้ง (Error 503)";
+        } else if (typeof data.error === 'string' && data.error.includes("503")) {
+          errorMessage = "ระบบวิเคราะห์ภาพ (Gemini) กำลังทำงานหนักในขณะนี้ กรุณารอสักครู่แล้วลองใหม่อีกครั้ง (Error 503)";
+        }
+        alert(errorMessage);
       } else {
         if (data.summary && data.summary.includes("ไม่พบ")) {
           alert(data.summary);
