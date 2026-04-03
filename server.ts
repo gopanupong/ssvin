@@ -1131,27 +1131,21 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
       return res.json(noImageResult);
     }
 
-    // 5. Download images and convert to base64
-    const imageParts = [];
+    // 5. Download images and analyze them sequentially
+    const individualResults = [];
     for (const img of allImages) {
-      const response = await driveService.files.get({
-        fileId: img.id,
-        alt: 'media'
-      }, { responseType: 'arraybuffer' });
-      
-      const base64 = Buffer.from(response.data as any).toString('base64');
-      imageParts.push({
-        inlineData: {
-          data: base64,
-          mimeType: img.mimeType
-        }
-      });
-    }
-
-    // 6. Analyze with Gemini
-    const ai = new GoogleGenAI({ apiKey });
-    const prompt = `คุณคือผู้เชี่ยวชาญด้านความปลอดภัยและความสะอาดของสถานีไฟฟ้าแรงสูง (Power Substation)
-กรุณาวิเคราะห์รูปภาพเหล่านี้และตรวจสอบสิ่งต่อไปนี้:
+      try {
+        const response = await driveService.files.get({
+          fileId: img.id,
+          alt: 'media'
+        }, { responseType: 'arraybuffer' });
+        
+        const base64 = Buffer.from(response.data as any).toString('base64');
+        
+        // Analyze this single image
+        const ai = new GoogleGenAI({ apiKey });
+        const prompt = `คุณคือผู้เชี่ยวชาญด้านความปลอดภัยและความสะอาดของสถานีไฟฟ้าแรงสูง (Power Substation)
+กรุณาวิเคราะห์รูปภาพนี้และตรวจสอบสิ่งต่อไปนี้:
 1. ความสะอาดเรียบร้อยโดยรวม (Cleanliness and Orderliness)
 2. วัชพืชหรือหญ้า (Weed): หากพบหญ้าขึ้นสูงเกิน 5 ซม. ให้รายงานว่า "Weed"
 3. คราบขี้นกหรือสิ่งแปลกปลอม (Bird Droppings): หากพบคราบสีขาวหรือสิ่งแปลกปลอมบนอุปกรณ์ไฟฟ้า ให้รายงานว่า "Bird Droppings"
@@ -1163,26 +1157,54 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
   "summary": "สรุปผลการวิเคราะห์สั้นๆ เป็นภาษาไทย"
 }`;
 
-    const result = await generateContentWithRetry(ai, {
-      model: "gemini-3-flash-preview",
-      contents: [
-        { parts: [{ text: prompt }, ...imageParts] }
-      ],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            status: { type: Type.STRING },
-            findings: { type: Type.ARRAY, items: { type: Type.STRING } },
-            summary: { type: Type.STRING }
-          },
-          required: ["status", "findings", "summary"]
-        }
-      }
-    });
+        const genResult = await generateContentWithRetry(ai, {
+          model: "gemini-3-flash-preview",
+          contents: [
+            { 
+              parts: [
+                { text: prompt }, 
+                { inlineData: { data: base64, mimeType: img.mimeType || 'image/jpeg' } }
+              ] 
+            }
+          ],
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                status: { type: Type.STRING },
+                findings: { type: Type.ARRAY, items: { type: Type.STRING } },
+                summary: { type: Type.STRING }
+              },
+              required: ["status", "findings", "summary"]
+            }
+          }
+        });
 
-    const analysis = JSON.parse(result.text || '{}');
+        const analysis = JSON.parse(genResult.text || '{}');
+        individualResults.push(analysis);
+        
+        // Small delay between images to avoid rate limits
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      } catch (err) {
+        console.error(`Failed to analyze image ${img.name}:`, err);
+      }
+    }
+
+    if (individualResults.length === 0) {
+      return res.status(500).json({ error: "ไม่สามารถวิเคราะห์รูปภาพได้เลย" });
+    }
+
+    // 6. Aggregate results
+    const isRed = individualResults.some(r => r.status === 'Red');
+    const allFindings = Array.from(new Set(individualResults.flatMap(r => r.findings || [])));
+    const summaryText = individualResults.map((r, i) => `ภาพที่ ${i+1}: ${r.summary}`).join('\n');
+
+    const finalAnalysis = {
+      status: isRed ? 'Red' : 'Green',
+      findings: allFindings,
+      summary: summaryText.length > 500 ? summaryText.substring(0, 497) + "..." : summaryText
+    };
     
     // 7. Save to DB
     const pool = getDbPool();
@@ -1193,7 +1215,7 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
            VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT (substation_name, month, year) 
            DO UPDATE SET status = EXCLUDED.status, findings = EXCLUDED.findings, summary = EXCLUDED.summary, analyzed_at = CURRENT_TIMESTAMP`,
-          [substationName, month, year, analysis.status, analysis.findings, analysis.summary]
+          [substationName, month, year, finalAnalysis.status, finalAnalysis.findings, finalAnalysis.summary]
         );
         console.log(`Saved analysis to DB for ${substationName}: ${dbResult.rowCount} rows affected`);
       } catch (dbErr) {
@@ -1201,7 +1223,7 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
       }
     }
 
-    res.json({ ...analysis, folderId });
+    res.json({ ...finalAnalysis, folderId });
 
   } catch (error: any) {
     console.error("AI Analysis error:", error);

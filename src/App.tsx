@@ -960,7 +960,13 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
     const toAnalyze = imagesInFolder.filter(img => !img.analysis);
     
     for (const img of toAnalyze) {
-      await handleAnalyzeImage(img, folderId);
+      try {
+        await handleAnalyzeImage(img, folderId);
+        // Wait 2 seconds between images to avoid rate limits
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } catch (err) {
+        console.error("Batch analysis error for image:", img.name, err);
+      }
     }
     
     setIsBatchAnalyzing(false);
