@@ -326,8 +326,11 @@ app.post("/api/analyze-image", async (req: any, res: any) => {
   const driveService = getDriveService();
   const apiKey = process.env.GEMINI_API_KEY;
 
-  if (!driveService || !apiKey) {
-    return res.status(500).json({ error: "Drive or Gemini not configured" });
+  if (!apiKey) {
+    return res.status(500).json({ error: "ยังไม่ได้ตั้งค่า GEMINI_API_KEY ในระบบ" });
+  }
+  if (!driveService) {
+    return res.status(500).json({ error: "ยังไม่ได้เชื่อมต่อ Google Drive หรือขาด Refresh Token" });
   }
 
   try {
@@ -824,8 +827,11 @@ app.get("/api/dashboard-stats", async (req, res) => {
   const sheetsService = getSheetsService();
   const sheetId = process.env.GOOGLE_SHEET_ID || "1WpvuQnhXzufiBmSRSaEnkRFs9BJf5H4fIWZ0xoYC8iw";
 
-  if (!sheetsService || !sheetId) {
-    return res.json({ total: 0, recent: [], error: "Google Sheets service not configured" });
+  if (!sheetsService) {
+    return res.json({ total: 0, recent: [], error: "ยังไม่ได้เชื่อมต่อ Google Sheets หรือขาด Refresh Token" });
+  }
+  if (!sheetId) {
+    return res.json({ total: 0, recent: [], error: "ยังไม่ได้ตั้งค่า GOOGLE_SHEET_ID ในระบบ" });
   }
 
   try {
@@ -970,8 +976,11 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
   const driveService = getDriveService();
   const apiKey = process.env.GEMINI_API_KEY;
 
-  if (!driveService || !apiKey) {
-    return res.status(500).json({ error: "Google Drive or Gemini API not configured" });
+  if (!apiKey) {
+    return res.status(500).json({ error: "ยังไม่ได้ตั้งค่า GEMINI_API_KEY ในระบบ" });
+  }
+  if (!driveService) {
+    return res.status(500).json({ error: "ยังไม่ได้เชื่อมต่อ Google Drive หรือขาด Refresh Token (กรุณาไปที่หน้าตั้งค่าเพื่อเชื่อมต่อใหม่)" });
   }
 
   try {
