@@ -884,6 +884,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   const [imagesInFolder, setImagesInFolder] = useState<any[]>([]);
   const [isFetchingImages, setIsFetchingImages] = useState(false);
   const [isBatchAnalyzing, setIsBatchAnalyzing] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
   const stopBatchRef = useRef(false);
   const [currentlyAnalyzingId, setCurrentlyAnalyzingId] = useState<string | null>(null);
   const [analysisSummary, setAnalysisSummary] = useState({ total: 0, clean: 0, issues: 0, weeds: 0, birdDroppings: 0 });
@@ -927,7 +928,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   const handleAnalyzeImage = async (image: any, folderId: string, silent = false) => {
     setCurrentlyAnalyzingId(image.id);
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 180000); // 180 second timeout
 
     try {
       const res = await fetch('/api/analyze-image', {
@@ -990,9 +991,13 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
     setIsBatchAnalyzing(true);
     stopBatchRef.current = false;
     const toAnalyze = imagesInFolder.filter(img => !img.analysis || img.analysis.error);
+    setBatchProgress({ current: 0, total: toAnalyze.length });
     
+    let count = 0;
     for (const img of toAnalyze) {
       if (stopBatchRef.current) break;
+      count++;
+      setBatchProgress(prev => ({ ...prev, current: count }));
       try {
         await handleAnalyzeImage(img, folderId, true);
         // Wait 2 seconds between images to avoid rate limits
@@ -1002,8 +1007,8 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
       }
     }
     
-    setIsBatchAnalyzing(true); // Keep it true until we finish the loop
     setIsBatchAnalyzing(false);
+    setBatchProgress({ current: 0, total: 0 });
     stopBatchRef.current = false;
     // Refresh health index logs after batch
     fetchHealthIndex();
@@ -1483,6 +1488,12 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
+                  {isBatchAnalyzing && (
+                    <div className="hidden md:flex flex-col items-end mr-2">
+                      <span className="text-[10px] font-bold text-violet-600">กำลังวิเคราะห์...</span>
+                      <span className="text-[10px] text-slate-400">{batchProgress.current} / {batchProgress.total} ภาพ</span>
+                    </div>
+                  )}
                   {isBatchAnalyzing ? (
                     <Button 
                       onClick={() => stopBatchRef.current = true}

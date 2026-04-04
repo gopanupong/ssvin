@@ -377,8 +377,10 @@ app.post("/api/analyze-image", async (req: any, res: any) => {
     }, { responseType: 'arraybuffer' });
     
     const base64 = Buffer.from(response.data as any).toString('base64');
+    console.log(`Image ${fileName} size: ${(response.data as any).byteLength / 1024 / 1024} MB`);
 
     // 3. Analyze with Gemini
+    console.time(`Analysis-${fileId}`);
     const ai = new GoogleGenAI({ apiKey });
     const prompt = `คุณคือผู้เชี่ยวชาญด้านความปลอดภัยและความสะอาดของสถานีไฟฟ้าแรงสูง (Power Substation)
 กรุณาวิเคราะห์รูปภาพนี้และตรวจสอบสิ่งต่อไปนี้:
@@ -394,7 +396,7 @@ app.post("/api/analyze-image", async (req: any, res: any) => {
 }`;
 
     const genResult = await generateContentWithRetry(ai, {
-      model: "gemini-3-flash-preview",
+      model: "gemini-3.1-flash-lite-preview",
       contents: [
         { 
           parts: [
@@ -418,6 +420,7 @@ app.post("/api/analyze-image", async (req: any, res: any) => {
     });
 
     const analysisResult = JSON.parse(genResult.text || '{}');
+    console.timeEnd(`Analysis-${fileId}`);
     const finalResult = {
       fileId,
       fileName,
@@ -1158,7 +1161,7 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
 }`;
 
         const genResult = await generateContentWithRetry(ai, {
-          model: "gemini-3-flash-preview",
+          model: "gemini-3.1-flash-lite-preview",
           contents: [
             { 
               parts: [
