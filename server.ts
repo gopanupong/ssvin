@@ -87,7 +87,7 @@ const SCOPES = [
 ];
 
 // Helper for Gemini API with retry logic
-async function generateContentWithRetry(ai: GoogleGenAI, params: any, maxRetries = 3) {
+async function generateContentWithRetry(ai: GoogleGenAI, params: any, maxRetries = 2) {
   let lastError: any;
   for (let i = 0; i < maxRetries; i++) {
     try {
@@ -132,7 +132,14 @@ function getOAuth2Client() {
 }
 
 // Google Sheets Helper for AI Analysis History
+let historyCache: { data: any[], timestamp: number } | null = null;
+const CACHE_TTL = 30000; // 30 seconds
+
 async function getAnalysisHistory() {
+  if (historyCache && (Date.now() - historyCache.timestamp < CACHE_TTL)) {
+    return historyCache.data;
+  }
+  
   const oauth2Client = getOAuth2Client();
   if (!process.env.GOOGLE_REFRESH_TOKEN) return [];
   oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
@@ -146,7 +153,7 @@ async function getAnalysisHistory() {
       range: "AI_Analysis!A:G",
     });
     const rows = response.data.values || [];
-    return rows.slice(1).map(row => ({
+    const data = rows.slice(1).map(row => ({
       fileId: row[0],
       fileName: row[1],
       folderId: row[2],
@@ -155,6 +162,9 @@ async function getAnalysisHistory() {
       summary: row[5],
       analyzedAt: row[6]
     }));
+    
+    historyCache = { data, timestamp: Date.now() };
+    return data;
   } catch (err: any) {
     if (err.code === 404 || (err.response && err.response.status === 400)) {
       await initAnalysisSheet();
@@ -363,14 +373,7 @@ app.post("/api/analyze-image", async (req: any, res: any) => {
   }
 
   try {
-    // 1. Check history first
-    const history = await getAnalysisHistory();
-    const existing = history.find(h => h.fileId === fileId);
-    if (existing) {
-      return res.json(existing);
-    }
-
-    // 2. Download image
+    // 1. Download image
     const response = await driveService.files.get({
       fileId,
       alt: 'media'
@@ -379,7 +382,7 @@ app.post("/api/analyze-image", async (req: any, res: any) => {
     const base64 = Buffer.from(response.data as any).toString('base64');
     console.log(`Image ${fileName} size: ${(response.data as any).byteLength / 1024 / 1024} MB`);
 
-    // 3. Analyze with Gemini
+    // 2. Analyze with Gemini
     console.time(`Analysis-${fileId}`);
     const ai = new GoogleGenAI({ apiKey });
     const prompt = `คุณคือผู้เชี่ยวชาญด้านความปลอดภัยและความสะอาดของสถานีไฟฟ้าแรงสูง (Power Substation)
@@ -395,8 +398,9 @@ app.post("/api/analyze-image", async (req: any, res: any) => {
   "summary": "สรุปผลการวิเคราะห์สั้นๆ เป็นภาษาไทย"
 }`;
 
-    const genResult = await generateContentWithRetry(ai, {
-      model: "gemini-3.1-flash-lite-preview",
+    // Add a timeout to Gemini call to prevent hanging
+    const analysisPromise = generateContentWithRetry(ai, {
+      model: "gemini-3-flash-preview",
       contents: [
         { 
           parts: [
@@ -419,6 +423,12 @@ app.post("/api/analyze-image", async (req: any, res: any) => {
       }
     });
 
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error("Gemini API Timeout")), 45000)
+    );
+
+    const genResult = await Promise.race([analysisPromise, timeoutPromise]) as any;
+
     const analysisResult = JSON.parse(genResult.text || '{}');
     console.timeEnd(`Analysis-${fileId}`);
     const finalResult = {
@@ -428,8 +438,25 @@ app.post("/api/analyze-image", async (req: any, res: any) => {
       ...analysisResult
     };
 
-    // 4. Save to Google Sheets
-    await saveAnalysisResult(finalResult);
+    // 3. Save to Google Sheets (Non-blocking or with its own catch)
+    try {
+      await saveAnalysisResult(finalResult);
+      
+      // Update cache if it exists
+      if (historyCache) {
+        historyCache.data.push({
+          fileId: finalResult.fileId,
+          fileName: finalResult.fileName,
+          folderId: finalResult.folderId,
+          status: finalResult.status,
+          findings: finalResult.findings,
+          summary: finalResult.summary,
+          analyzedAt: new Date().toISOString()
+        });
+      }
+    } catch (sheetError) {
+      console.error("Failed to save to Google Sheets, but returning analysis:", sheetError);
+    }
 
     res.json(finalResult);
   } catch (error: any) {
@@ -441,15 +468,22 @@ app.post("/api/analyze-image", async (req: any, res: any) => {
 let drive: any = null;
 let sheets: any = null;
 
+let cachedOAuth2Client: any = null;
+let lastRefreshToken: string | null = null;
+
 function getGoogleAuth() {
-  // Always get fresh client to pick up any ENV changes
-  const oauth2Client = getOAuth2Client();
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
   
   // Priority 1: OAuth2 Refresh Token
-  if (process.env.GOOGLE_REFRESH_TOKEN) {
-    oauth2Client.setCredentials({
-      refresh_token: process.env.GOOGLE_REFRESH_TOKEN
-    });
+  if (refreshToken) {
+    if (cachedOAuth2Client && lastRefreshToken === refreshToken) {
+      return cachedOAuth2Client;
+    }
+    
+    const oauth2Client = getOAuth2Client();
+    oauth2Client.setCredentials({ refresh_token: refreshToken });
+    cachedOAuth2Client = oauth2Client;
+    lastRefreshToken = refreshToken;
     return oauth2Client;
   }
 
