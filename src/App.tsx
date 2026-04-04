@@ -884,6 +884,8 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   const [imagesInFolder, setImagesInFolder] = useState<any[]>([]);
   const [isFetchingImages, setIsFetchingImages] = useState(false);
   const [isBatchAnalyzing, setIsBatchAnalyzing] = useState(false);
+  const stopBatchRef = useRef(false);
+  const [currentlyAnalyzingId, setCurrentlyAnalyzingId] = useState<string | null>(null);
   const [analysisSummary, setAnalysisSummary] = useState({ total: 0, clean: 0, issues: 0, weeds: 0, birdDroppings: 0 });
 
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -906,12 +908,15 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   const updateAnalysisSummary = (images: any[]) => {
     const summary = images.reduce((acc, img) => {
       acc.total++;
-      if (img.analysis) {
-        if (img.analysis.status === 'Green') acc.clean++;
-        else {
+      if (img.analysis && !img.analysis.error) {
+        if (img.analysis.status === 'Green') {
+          acc.clean++;
+        } else if (img.analysis.status === 'Red') {
           acc.issues++;
-          if (img.analysis.findings.includes('Weed')) acc.weeds++;
-          if (img.analysis.findings.includes('Bird Droppings')) acc.birdDroppings++;
+          if (img.analysis.findings && Array.isArray(img.analysis.findings)) {
+            if (img.analysis.findings.includes('Weed')) acc.weeds++;
+            if (img.analysis.findings.includes('Bird Droppings')) acc.birdDroppings++;
+          }
         }
       }
       return acc;
@@ -919,7 +924,11 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
     setAnalysisSummary(summary);
   };
 
-  const handleAnalyzeImage = async (image: any, folderId: string) => {
+  const handleAnalyzeImage = async (image: any, folderId: string, silent = false) => {
+    setCurrentlyAnalyzingId(image.id);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+
     try {
       const res = await fetch('/api/analyze-image', {
         method: 'POST',
@@ -929,8 +938,10 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
           fileName: image.name,
           folderId: folderId,
           mimeType: image.mimeType
-        })
+        }),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
       const result = await res.json();
       
       if (result.error) {
@@ -940,7 +951,14 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
         } else if (typeof result.error === 'string' && result.error.includes("503")) {
           errorMessage = "ระบบวิเคราะห์ภาพ (Gemini) กำลังทำงานหนักในขณะนี้ กรุณารอสักครู่แล้วลองใหม่อีกครั้ง (Error 503)";
         }
-        alert(errorMessage);
+        if (!silent) alert(errorMessage);
+        
+        // Even if error, mark as analyzed with the error so we don't keep retrying it in batch
+        setImagesInFolder(prev => {
+          const updated = prev.map(img => img.id === image.id ? { ...img, analysis: result } : img);
+          updateAnalysisSummary(updated);
+          return updated;
+        });
         return result;
       }
 
@@ -950,18 +968,33 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
         return updated;
       });
       return result;
-    } catch (err) {
+    } catch (err: any) {
+      clearTimeout(timeoutId);
       console.error("Failed to analyze image:", err);
+      const errorResult = { error: err.name === 'AbortError' ? "หมดเวลาการเชื่อมต่อ (Timeout)" : "เกิดข้อผิดพลาดในการเชื่อมต่อ" };
+      
+      setImagesInFolder(prev => {
+        const updated = prev.map(img => img.id === image.id ? { ...img, analysis: errorResult } : img);
+        updateAnalysisSummary(updated);
+        return updated;
+      });
+      
+      if (!silent) alert(errorResult.error);
+      return errorResult;
+    } finally {
+      setCurrentlyAnalyzingId(null);
     }
   };
 
   const handleBatchAnalyze = async (folderId: string) => {
     setIsBatchAnalyzing(true);
-    const toAnalyze = imagesInFolder.filter(img => !img.analysis);
+    stopBatchRef.current = false;
+    const toAnalyze = imagesInFolder.filter(img => !img.analysis || img.analysis.error);
     
     for (const img of toAnalyze) {
+      if (stopBatchRef.current) break;
       try {
-        await handleAnalyzeImage(img, folderId);
+        await handleAnalyzeImage(img, folderId, true);
         // Wait 2 seconds between images to avoid rate limits
         await new Promise(resolve => setTimeout(resolve, 2000));
       } catch (err) {
@@ -969,7 +1002,9 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
       }
     }
     
+    setIsBatchAnalyzing(true); // Keep it true until we finish the loop
     setIsBatchAnalyzing(false);
+    stopBatchRef.current = false;
     // Refresh health index logs after batch
     fetchHealthIndex();
   };
@@ -1448,13 +1483,23 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <Button 
-                    onClick={() => selectedFolderId && handleBatchAnalyze(selectedFolderId)}
-                    disabled={isBatchAnalyzing || imagesInFolder.length === 0 || !selectedFolderId}
-                    className="hidden md:flex"
-                  >
-                    {isBatchAnalyzing ? <><Loader2 className="animate-spin w-3 h-3" /> กำลังวิเคราะห์...</> : <><LayoutDashboard size={14} /> วิเคราะห์ภาพที่เหลือ</>}
-                  </Button>
+                  {isBatchAnalyzing ? (
+                    <Button 
+                      onClick={() => stopBatchRef.current = true}
+                      variant="destructive"
+                      className="hidden md:flex gap-2"
+                    >
+                      <Loader2 className="animate-spin w-3 h-3" /> หยุดการวิเคราะห์
+                    </Button>
+                  ) : (
+                    <Button 
+                      onClick={() => selectedFolderId && handleBatchAnalyze(selectedFolderId)}
+                      disabled={imagesInFolder.length === 0 || !selectedFolderId}
+                      className="hidden md:flex"
+                    >
+                      <LayoutDashboard size={14} /> วิเคราะห์ภาพที่เหลือ
+                    </Button>
+                  )}
                   <button 
                     onClick={() => {
                       setSelectedSubstationForAnalysis(null);
@@ -1517,12 +1562,16 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                           
                           {/* Status Badge */}
                           <div className="absolute top-2 right-2">
-                            {img.analysis ? (
+                            {currentlyAnalyzingId === img.id ? (
+                              <span className="w-6 h-6 rounded-full bg-violet-500 text-white flex items-center justify-center shadow-lg animate-pulse">
+                                <Loader2 size={14} className="animate-spin" />
+                              </span>
+                            ) : img.analysis ? (
                               <span className={cn(
                                 "w-6 h-6 rounded-full flex items-center justify-center shadow-lg",
-                                img.analysis.status === 'Green' ? "bg-emerald-500 text-white" : "bg-rose-500 text-white"
+                                img.analysis.error ? "bg-amber-500 text-white" : (img.analysis.status === 'Green' ? "bg-emerald-500 text-white" : "bg-rose-500 text-white")
                               )}>
-                                {img.analysis.status === 'Green' ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+                                {img.analysis.error ? <AlertCircle size={14} /> : (img.analysis.status === 'Green' ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />)}
                               </span>
                             ) : (
                               <span className="w-6 h-6 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center shadow-lg">
@@ -1534,10 +1583,10 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                         
                         <div className="p-3">
                           <p className="text-[10px] font-bold text-slate-800 truncate mb-1">{img.name}</p>
-                          {img.analysis ? (
+                          {img.analysis && !img.analysis.error ? (
                             <div className="space-y-1">
                               <div className="flex flex-wrap gap-1">
-                                {img.analysis.findings.map((f: string) => (
+                                {img.analysis.findings && img.analysis.findings.map((f: string) => (
                                   <span key={f} className="text-[8px] bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded font-bold">
                                     {f === 'Weed' ? 'หญ้า' : (f === 'Bird Droppings' ? 'ขี้นก' : f)}
                                   </span>
@@ -1548,10 +1597,13 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                           ) : (
                             <Button 
                               onClick={() => selectedFolderId && handleAnalyzeImage(img, selectedFolderId)}
+                              disabled={isBatchAnalyzing || currentlyAnalyzingId === img.id}
                               className="w-full py-1 text-[8px] h-auto"
-                              variant="outline"
+                              variant={img.analysis?.error ? "destructive" : "outline"}
                             >
-                              วิเคราะห์ภาพนี้
+                              {currentlyAnalyzingId === img.id ? (
+                                <><Loader2 size={10} className="animate-spin mr-1" /> กำลังวิเคราะห์...</>
+                              ) : (img.analysis?.error ? "ลองใหม่อีกครั้ง" : "วิเคราะห์ภาพนี้")}
                             </Button>
                           )}
                         </div>
