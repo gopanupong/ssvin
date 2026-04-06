@@ -87,25 +87,31 @@ const SCOPES = [
 ];
 
 // Helper for Gemini API with retry logic
-async function generateContentWithRetry(ai: GoogleGenAI, params: any, maxRetries = 2) {
+async function generateContentWithRetry(ai: GoogleGenAI, params: any, maxRetries = 3) {
   let lastError: any;
   for (let i = 0; i < maxRetries; i++) {
     try {
-      return await ai.models.generateContent(params);
+      console.log(`Gemini API Attempt ${i + 1}/${maxRetries}...`);
+      const result = await ai.models.generateContent(params);
+      console.log(`Gemini API Attempt ${i + 1} succeeded.`);
+      return result;
     } catch (err: any) {
       lastError = err;
       const errorStr = JSON.stringify(err);
+      console.error(`Gemini API Attempt ${i + 1} failed:`, err.message || errorStr);
+      
       const isRetryable = 
         err.status === 'UNAVAILABLE' || 
         err.code === 503 || 
         err.status === 'RESOURCE_EXHAUSTED' || 
         err.code === 429 ||
         errorStr.includes("503") ||
-        errorStr.includes("UNAVAILABLE");
+        errorStr.includes("UNAVAILABLE") ||
+        errorStr.includes("overloaded");
 
       if (isRetryable && i < maxRetries - 1) {
-        const delay = Math.pow(2, i) * 2000 + Math.random() * 1000;
-        console.log(`Gemini API busy (attempt ${i + 1}/${maxRetries}). Retrying in ${Math.round(delay)}ms...`);
+        const delay = Math.pow(2, i) * 3000 + Math.random() * 1000;
+        console.log(`Gemini API busy. Retrying in ${Math.round(delay)}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
@@ -140,18 +146,19 @@ async function getAnalysisHistory() {
     return historyCache.data;
   }
   
-  const oauth2Client = getOAuth2Client();
-  if (!process.env.GOOGLE_REFRESH_TOKEN) return [];
-  oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
-  const sheets = google.sheets({ version: "v4", auth: oauth2Client });
+  const auth = getGoogleAuth();
+  if (!auth) return [];
+  const sheets = google.sheets({ version: "v4", auth });
   const spreadsheetId = process.env.GOOGLE_SHEET_ID;
   if (!spreadsheetId) return [];
 
   try {
+    console.time("FetchHistory");
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range: "AI_Analysis!A:G",
-    });
+    }, { timeout: 15000 }); // 15s timeout for history fetch
+    console.timeEnd("FetchHistory");
     const rows = response.data.values || [];
     const data = rows.slice(1).map(row => ({
       fileId: row[0],
@@ -174,15 +181,14 @@ async function getAnalysisHistory() {
 }
 
 async function initAnalysisSheet() {
-  const oauth2Client = getOAuth2Client();
-  if (!process.env.GOOGLE_REFRESH_TOKEN) return;
-  oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
-  const sheets = google.sheets({ version: "v4", auth: oauth2Client });
+  const auth = getGoogleAuth();
+  if (!auth) return;
+  const sheets = google.sheets({ version: "v4", auth });
   const spreadsheetId = process.env.GOOGLE_SHEET_ID;
   if (!spreadsheetId) return;
 
   try {
-    const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+    const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId }, { timeout: 10000 });
     const sheetExists = spreadsheet.data.sheets?.some(s => s.properties?.title === "AI_Analysis");
 
     if (!sheetExists) {
@@ -209,10 +215,9 @@ async function initAnalysisSheet() {
 }
 
 async function saveAnalysisResult(result: any) {
-  const oauth2Client = getOAuth2Client();
-  if (!process.env.GOOGLE_REFRESH_TOKEN) return;
-  oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
-  const sheets = google.sheets({ version: "v4", auth: oauth2Client });
+  const auth = getGoogleAuth();
+  if (!auth) return;
+  const sheets = google.sheets({ version: "v4", auth });
   const spreadsheetId = process.env.GOOGLE_SHEET_ID;
   if (!spreadsheetId) return;
 
@@ -231,7 +236,7 @@ async function saveAnalysisResult(result: any) {
         new Date().toISOString()
       ]]
     }
-  });
+  }, { timeout: 10000 });
 }
 
 // Route to start OAuth flow
@@ -382,10 +387,15 @@ app.post("/api/analyze-image", async (req: any, res: any) => {
     }
 
     // 1. Download image
+    console.time(`Download-${fileId}`);
     const response = await driveService.files.get({
       fileId,
       alt: 'media'
-    }, { responseType: 'arraybuffer' });
+    }, { 
+      responseType: 'arraybuffer',
+      timeout: 60000 // 60s timeout for download
+    });
+    console.timeEnd(`Download-${fileId}`);
     
     const base64 = Buffer.from(response.data as any).toString('base64');
     console.log(`Image ${fileName} size: ${(response.data as any).byteLength / 1024 / 1024} MB`);
@@ -432,7 +442,7 @@ app.post("/api/analyze-image", async (req: any, res: any) => {
     });
 
     const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("Gemini API Timeout")), 45000)
+      setTimeout(() => reject(new Error("Gemini API Timeout (120s)")), 120000)
     );
 
     const genResult = await Promise.race([analysisPromise, timeoutPromise]) as any;
@@ -480,9 +490,23 @@ let cachedOAuth2Client: any = null;
 let lastRefreshToken: string | null = null;
 
 function getGoogleAuth() {
+  // Priority 1: Service Account (More stable for server-to-server)
+  const authJson = process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON;
+  if (authJson) {
+    try {
+      const credentials = JSON.parse(authJson);
+      return new google.auth.JWT({
+        email: credentials.client_email,
+        key: credentials.private_key,
+        scopes: SCOPES
+      });
+    } catch (err) {
+      console.error("Failed to initialize Service Account Auth:", err);
+    }
+  }
+
+  // Priority 2: OAuth2 Refresh Token
   const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
-  
-  // Priority 1: OAuth2 Refresh Token
   if (refreshToken) {
     if (cachedOAuth2Client && lastRefreshToken === refreshToken) {
       return cachedOAuth2Client;
@@ -495,20 +519,7 @@ function getGoogleAuth() {
     return oauth2Client;
   }
 
-  // Priority 2: Service Account
-  const authJson = process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON;
-  if (!authJson) return null;
-  try {
-    const credentials = JSON.parse(authJson);
-    return new google.auth.JWT({
-      email: credentials.client_email,
-      key: credentials.private_key,
-      scopes: SCOPES
-    });
-  } catch (err) {
-    console.error("Failed to initialize Google Auth:", err);
-    return null;
-  }
+  return null;
 }
 
 function getDriveService() {

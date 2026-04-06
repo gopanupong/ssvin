@@ -926,9 +926,12 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   };
 
   const handleAnalyzeImage = async (image: any, folderId: string, silent = false) => {
+    if (image.analysis && !image.analysis.error) {
+      return image.analysis;
+    }
     setCurrentlyAnalyzingId(image.id);
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 180000); // 180 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 300000); // 300 second timeout (5 minutes)
 
     try {
       const res = await fetch('/api/analyze-image', {
