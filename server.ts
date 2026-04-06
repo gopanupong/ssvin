@@ -1096,6 +1096,7 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
     const mainFolderQuery = await driveService.files.list({
       q: `name contains '${substationName}' and mimeType = 'application/vnd.google-apps.folder' and '${parentFolderId}' in parents and trashed = false`,
       fields: "files(id, name)",
+      pageSize: 1000
     });
 
     if (!mainFolderQuery.data.files || mainFolderQuery.data.files.length === 0) {
@@ -1112,6 +1113,7 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
     const subfoldersQuery = await driveService.files.list({
       q: `'${mainFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
       fields: "files(id, name)",
+      pageSize: 1000
     });
 
     const subfolders = subfoldersQuery.data.files || [];
@@ -1168,6 +1170,7 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
 
     // 4. Collect all images from matching folders
     const allImages: any[] = [];
+    console.log(`Found ${matchingFolders.length} matching folders.`);
     for (const folder of matchingFolders) {
       const filesQuery = await driveService.files.list({
         q: `'${folder.id}' in parents and mimeType contains 'image/' and trashed = false`,
@@ -1175,9 +1178,11 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
         pageSize: 1000 // Get all images in the folder
       });
       if (filesQuery.data.files) {
+        console.log(`Folder ${folder.name} has ${filesQuery.data.files.length} images.`);
         allImages.push(...filesQuery.data.files);
       }
     }
+    console.log(`Total images to analyze: ${allImages.length}`);
 
     if (allImages.length === 0) {
       const noImageResult = { 
@@ -1204,27 +1209,30 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
     const individualResults: any[] = [];
     const history = await getAnalysisHistory();
     
-    // Process in chunks of 3 to avoid rate limits and timeouts while being faster than sequential
-    const CHUNK_SIZE = 3;
+    // Process in chunks of 5 to avoid rate limits and timeouts while being faster than sequential
+    const CHUNK_SIZE = 5;
     for (let i = 0; i < allImages.length; i += CHUNK_SIZE) {
       const chunk = allImages.slice(i, i + CHUNK_SIZE);
       console.log(`Analyzing chunk ${Math.floor(i/CHUNK_SIZE) + 1}/${Math.ceil(allImages.length/CHUNK_SIZE)} (${chunk.length} images)...`);
       
       const chunkPromises = chunk.map(async (img) => {
         try {
-          // Check if already analyzed in history
-          const existing = history.find(h => h.fileId === img.id);
-          if (existing) {
-            console.log(`Image ${img.name} already analyzed, using cached result.`);
-            return existing;
+          // Check if already analyzed in history (only if not forced)
+          if (!force) {
+            const existing = history.find(h => h.fileId === img.id);
+            if (existing) {
+              console.log(`Image ${img.name} already analyzed, using cached result.`);
+              return existing;
+            }
           }
 
+          console.log(`Downloading image: ${img.name} (${img.id})...`);
           const response = await driveService.files.get({
             fileId: img.id,
             alt: 'media'
           }, { 
             responseType: 'arraybuffer',
-            timeout: 60000 // 60s timeout for download
+            timeout: 90000 // Increase to 90s
           });
           
           const base64 = Buffer.from(response.data as any).toString('base64');
@@ -1244,6 +1252,7 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
   "summary": "สรุปผลการวิเคราะห์สั้นๆ เป็นภาษาไทย"
 }`;
 
+          console.log(`Calling Gemini for image: ${img.name}...`);
           const genResult = await generateContentWithRetry(ai, {
             model: "gemini-3-flash-preview",
             contents: [
@@ -1286,9 +1295,17 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
           }
           
           return resultWithMeta;
-        } catch (err) {
-          console.error(`Failed to analyze image ${img.name}:`, err);
-          return null;
+        } catch (err: any) {
+          console.error(`Failed to analyze image ${img.name}:`, err.message || err);
+          // Return a fallback result instead of null so it's counted
+          return {
+            fileId: img.id,
+            fileName: img.name,
+            status: 'Gray',
+            findings: ['Error'],
+            summary: `ไม่สามารถวิเคราะห์ได้: ${err.message || 'Unknown error'}`,
+            analyzedAt: new Date().toISOString()
+          };
         }
       });
 
@@ -1311,8 +1328,9 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
     
     const redResults = individualResults.filter(r => r.status === 'Red');
     const greenResults = individualResults.filter(r => r.status === 'Green');
+    const errorResults = individualResults.filter(r => r.status === 'Gray');
     
-    let summaryText = `วิเคราะห์ทั้งหมด ${individualResults.length} ภาพ: พบปัญหา ${redResults.length} ภาพ, ปกติ ${greenResults.length} ภาพ\n`;
+    let summaryText = `วิเคราะห์ทั้งหมด ${individualResults.length} ภาพ: พบปัญหา ${redResults.length} ภาพ, ปกติ ${greenResults.length} ภาพ${errorResults.length > 0 ? `, ผิดพลาด ${errorResults.length} ภาพ` : ''}\n`;
     if (redResults.length > 0) {
       summaryText += `ปัญหาที่พบ: ${allFindings.join(', ')}\n`;
       summaryText += redResults.map((r, i) => `- ${r.fileName || `ภาพที่ ${i+1}`}: ${r.summary}`).join('\n');

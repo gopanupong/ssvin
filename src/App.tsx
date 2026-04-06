@@ -1608,7 +1608,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                         <div className="p-3 flex flex-col h-full">
                           <p className="text-[10px] font-bold text-slate-800 truncate mb-1" title={img.name}>{img.name}</p>
                           
-                          {img.analysis && !img.analysis.error && (
+                          {img.analysis && img.analysis.status !== 'Gray' && (
                             <div className="mb-2 space-y-1.5">
                               <div className="bg-slate-50 p-1.5 rounded border border-slate-100">
                                 <p className="text-[8px] font-bold text-slate-400 uppercase mb-0.5">Summary</p>
@@ -1633,15 +1633,24 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                             </div>
                           )}
 
+                          {img.analysis && img.analysis.status === 'Gray' && (
+                            <div className="mb-2 bg-slate-50 p-1.5 rounded border border-amber-100">
+                              <p className="text-[8px] font-bold text-amber-500 uppercase mb-0.5">Error</p>
+                              <p className="text-[9px] text-slate-500 leading-tight italic">
+                                {img.analysis.summary}
+                              </p>
+                            </div>
+                          )}
+
                           <Button 
                             onClick={() => selectedFolderId && handleAnalyzeImage(img, selectedFolderId)}
                             disabled={isBatchAnalyzing || currentlyAnalyzingId === img.id}
                             className="w-full py-1.5 text-[9px] h-auto font-bold mt-auto"
-                            variant={img.analysis?.error ? "destructive" : (img.analysis ? "ghost" : "outline")}
+                            variant={img.analysis?.status === 'Gray' ? "destructive" : (img.analysis ? "ghost" : "outline")}
                           >
                             {currentlyAnalyzingId === img.id ? (
                               <><Loader2 size={10} className="animate-spin mr-1" /> กำลังวิเคราะห์...</>
-                            ) : (img.analysis?.error ? "ลองใหม่อีกครั้ง" : (img.analysis ? "วิเคราะห์ซ้ำ" : "วิเคราะห์ภาพนี้"))}
+                            ) : (img.analysis?.status === 'Gray' ? "ลองใหม่อีกครั้ง" : (img.analysis ? "วิเคราะห์ซ้ำ" : "วิเคราะห์ภาพนี้"))}
                           </Button>
                         </div>
                       </div>
