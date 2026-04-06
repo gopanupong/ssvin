@@ -1606,21 +1606,17 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                         </div>
                         
                         <div className="p-3 flex flex-col h-full">
-                          <p className="text-[10px] font-bold text-slate-800 truncate mb-2" title={img.name}>{img.name}</p>
+                          <p className="text-[10px] font-bold text-slate-800 truncate mb-1" title={img.name}>{img.name}</p>
                           
-                          <Button 
-                            onClick={() => selectedFolderId && handleAnalyzeImage(img, selectedFolderId)}
-                            disabled={isBatchAnalyzing || currentlyAnalyzingId === img.id}
-                            className="w-full py-1.5 text-[9px] h-auto font-bold mb-2"
-                            variant={img.analysis?.error ? "destructive" : (img.analysis ? "ghost" : "outline")}
-                          >
-                            {currentlyAnalyzingId === img.id ? (
-                              <><Loader2 size={10} className="animate-spin mr-1" /> กำลังวิเคราะห์...</>
-                            ) : (img.analysis?.error ? "ลองใหม่อีกครั้ง" : (img.analysis ? "วิเคราะห์ซ้ำ" : "วิเคราะห์ภาพนี้"))}
-                          </Button>
-
                           {img.analysis && !img.analysis.error && (
-                            <div className="mt-auto pt-2 border-t border-slate-50 space-y-1.5">
+                            <div className="mb-2 space-y-1.5">
+                              <div className="bg-slate-50 p-1.5 rounded border border-slate-100">
+                                <p className="text-[8px] font-bold text-slate-400 uppercase mb-0.5">Summary</p>
+                                <p className="text-[9px] text-slate-600 leading-tight italic">
+                                  {img.analysis.summary || "ไม่มีข้อมูลสรุป"}
+                                </p>
+                              </div>
+                              
                               <div className="flex flex-wrap gap-1">
                                 {img.analysis.findings && img.analysis.findings.length > 0 ? (
                                   img.analysis.findings.map((f: string) => (
@@ -1634,11 +1630,19 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                                   </span>
                                 )}
                               </div>
-                              <p className="text-[9px] text-slate-500 leading-tight bg-slate-50 p-1.5 rounded border border-slate-100 italic">
-                                {img.analysis.summary}
-                              </p>
                             </div>
                           )}
+
+                          <Button 
+                            onClick={() => selectedFolderId && handleAnalyzeImage(img, selectedFolderId)}
+                            disabled={isBatchAnalyzing || currentlyAnalyzingId === img.id}
+                            className="w-full py-1.5 text-[9px] h-auto font-bold mt-auto"
+                            variant={img.analysis?.error ? "destructive" : (img.analysis ? "ghost" : "outline")}
+                          >
+                            {currentlyAnalyzingId === img.id ? (
+                              <><Loader2 size={10} className="animate-spin mr-1" /> กำลังวิเคราะห์...</>
+                            ) : (img.analysis?.error ? "ลองใหม่อีกครั้ง" : (img.analysis ? "วิเคราะห์ซ้ำ" : "วิเคราะห์ภาพนี้"))}
+                          </Button>
                         </div>
                       </div>
                     ))}
