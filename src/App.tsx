@@ -1052,13 +1052,13 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
     fetchHealthIndex();
   }, [selectedMonth, selectedYear]);
 
-  const handleAnalyze = async (substationName: string) => {
+  const handleAnalyze = async (substationName: string, force = false) => {
     setAnalyzing(substationName);
     try {
       const res = await fetch('/api/analyze-substation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ substationName, month: selectedMonth + 1, year: selectedYear })
+        body: JSON.stringify({ substationName, month: selectedMonth + 1, year: selectedYear, force })
       });
       const data = await res.json();
       console.log("Analysis result:", data);
@@ -1071,7 +1071,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
         }
         alert(errorMessage);
       } else {
-        if (data.summary && data.summary.includes("ไม่พบ")) {
+        if (data.summary) {
           alert(data.summary);
         }
         fetchHealthIndex();
@@ -1422,7 +1422,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
 
                     <div className="grid grid-cols-2 gap-2 mt-2">
                       <Button 
-                        onClick={() => handleAnalyze(sub.name)} 
+                        onClick={() => handleAnalyze(sub.name, !!health)} 
                         disabled={isAnalyzing}
                         className="py-2 text-[10px]"
                         variant={health ? "outline" : "primary"}

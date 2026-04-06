@@ -1057,7 +1057,7 @@ app.get("/api/dashboard-stats", async (req, res) => {
 
 // AI Analysis Endpoint
 app.post("/api/analyze-substation", async (req: any, res: any) => {
-  const { substationName, month, year, dryRun } = req.body;
+  const { substationName, month, year, dryRun, force } = req.body;
   const driveService = getDriveService();
   const apiKey = process.env.GEMINI_API_KEY;
 
@@ -1069,6 +1069,20 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
   }
 
   try {
+    // Check if already analyzed in DB to avoid redundant calls if not forced
+    if (!force && !dryRun) {
+      const pool = getDbPool();
+      if (pool) {
+        const existing = await pool.query(
+          "SELECT * FROM health_index_logs WHERE substation_name = $1 AND month = $2 AND year = $3",
+          [substationName, month, year]
+        );
+        if (existing.rows.length > 0) {
+          console.log(`Substation ${substationName} already analyzed in DB, returning existing result.`);
+          return res.json(existing.rows[0]);
+        }
+      }
+    }
     const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || "1IzXUWJfucyb47Dr32QSVIxBKmoMrWF6J";
     
     // 0. Verify Parent Folder Access
@@ -1189,12 +1203,25 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
 
     // 5. Download images and analyze them sequentially
     const individualResults = [];
+    const history = await getAnalysisHistory();
+    
     for (const img of allImages) {
       try {
+        // Check if already analyzed in history
+        const existing = history.find(h => h.fileId === img.id);
+        if (existing) {
+          console.log(`Image ${img.name} already analyzed, using cached result.`);
+          individualResults.push(existing);
+          continue;
+        }
+
         const response = await driveService.files.get({
           fileId: img.id,
           alt: 'media'
-        }, { responseType: 'arraybuffer' });
+        }, { 
+          responseType: 'arraybuffer',
+          timeout: 60000 // 60s timeout for download
+        });
         
         const base64 = Buffer.from(response.data as any).toString('base64');
         
@@ -1214,7 +1241,7 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
 }`;
 
         const genResult = await generateContentWithRetry(ai, {
-          model: "gemini-3.1-flash-lite-preview",
+          model: "gemini-3-flash-preview", // Consistent with analyze-image
           contents: [
             { 
               parts: [
@@ -1238,7 +1265,23 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
         });
 
         const analysis = JSON.parse(genResult.text || '{}');
-        individualResults.push(analysis);
+        const resultWithMeta = {
+          ...analysis,
+          fileId: img.id,
+          fileName: img.name,
+          folderId: folderId,
+          analyzedAt: new Date().toISOString()
+        };
+        
+        individualResults.push(resultWithMeta);
+        
+        // Save to Google Sheets history
+        await saveAnalysisResult(resultWithMeta);
+        
+        // Update cache if it exists
+        if (historyCache) {
+          historyCache.data.push(resultWithMeta);
+        }
         
         // Small delay between images to avoid rate limits
         await new Promise(resolve => setTimeout(resolve, 1500));
