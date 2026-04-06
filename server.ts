@@ -87,7 +87,7 @@ const SCOPES = [
 ];
 
 // Helper for Gemini API with retry logic
-async function generateContentWithRetry(ai: GoogleGenAI, params: any, maxRetries = 3) {
+async function generateContentWithRetry(ai: GoogleGenAI, params: any, maxRetries = 5) {
   let lastError: any;
   for (let i = 0; i < maxRetries; i++) {
     try {
@@ -342,7 +342,7 @@ app.get("/api/drive/folder/:folderId/images", async (req: any, res: any) => {
     const driveResponse = await driveService.files.list({
       q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
       fields: "files(id, name, mimeType, thumbnailLink, webViewLink)",
-      pageSize: 100
+      pageSize: 1000
     });
     const images = driveResponse.data.files || [];
 
@@ -1200,33 +1200,38 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
       return res.json(noImageResult);
     }
 
-    // 5. Download images and analyze them sequentially
-    const individualResults = [];
+    // 5. Download images and analyze them in parallel with a limit
+    const individualResults: any[] = [];
     const history = await getAnalysisHistory();
     
-    for (const img of allImages) {
-      try {
-        // Check if already analyzed in history
-        const existing = history.find(h => h.fileId === img.id);
-        if (existing) {
-          console.log(`Image ${img.name} already analyzed, using cached result.`);
-          individualResults.push(existing);
-          continue;
-        }
+    // Process in chunks of 3 to avoid rate limits and timeouts while being faster than sequential
+    const CHUNK_SIZE = 3;
+    for (let i = 0; i < allImages.length; i += CHUNK_SIZE) {
+      const chunk = allImages.slice(i, i + CHUNK_SIZE);
+      console.log(`Analyzing chunk ${Math.floor(i/CHUNK_SIZE) + 1}/${Math.ceil(allImages.length/CHUNK_SIZE)} (${chunk.length} images)...`);
+      
+      const chunkPromises = chunk.map(async (img) => {
+        try {
+          // Check if already analyzed in history
+          const existing = history.find(h => h.fileId === img.id);
+          if (existing) {
+            console.log(`Image ${img.name} already analyzed, using cached result.`);
+            return existing;
+          }
 
-        const response = await driveService.files.get({
-          fileId: img.id,
-          alt: 'media'
-        }, { 
-          responseType: 'arraybuffer',
-          timeout: 60000 // 60s timeout for download
-        });
-        
-        const base64 = Buffer.from(response.data as any).toString('base64');
-        
-        // Analyze this single image
-        const ai = new GoogleGenAI({ apiKey });
-        const prompt = `คุณคือผู้เชี่ยวชาญด้านความปลอดภัยและความสะอาดของสถานีไฟฟ้าแรงสูง (Power Substation)
+          const response = await driveService.files.get({
+            fileId: img.id,
+            alt: 'media'
+          }, { 
+            responseType: 'arraybuffer',
+            timeout: 60000 // 60s timeout for download
+          });
+          
+          const base64 = Buffer.from(response.data as any).toString('base64');
+          
+          // Analyze this single image
+          const ai = new GoogleGenAI({ apiKey });
+          const prompt = `คุณคือผู้เชี่ยวชาญด้านความปลอดภัยและความสะอาดของสถานีไฟฟ้าแรงสูง (Power Substation)
 กรุณาวิเคราะห์รูปภาพนี้และตรวจสอบสิ่งต่อไปนี้:
 1. ความสะอาดเรียบร้อยโดยรวม (Cleanliness and Orderliness)
 2. วัชพืชหรือหญ้า (Weed): หากพบหญ้าขึ้นสูงเกิน 5 ซม. ให้รายงานว่า "Weed"
@@ -1239,53 +1244,60 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
   "summary": "สรุปผลการวิเคราะห์สั้นๆ เป็นภาษาไทย"
 }`;
 
-        const genResult = await generateContentWithRetry(ai, {
-          model: "gemini-3-flash-preview", // Consistent with analyze-image
-          contents: [
-            { 
-              parts: [
-                { text: prompt }, 
-                { inlineData: { data: base64, mimeType: img.mimeType || 'image/jpeg' } }
-              ] 
+          const genResult = await generateContentWithRetry(ai, {
+            model: "gemini-3-flash-preview",
+            contents: [
+              { 
+                parts: [
+                  { text: prompt }, 
+                  { inlineData: { data: base64, mimeType: img.mimeType || 'image/jpeg' } }
+                ] 
+              }
+            ],
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  status: { type: Type.STRING },
+                  findings: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  summary: { type: Type.STRING }
+                },
+                required: ["status", "findings", "summary"]
+              }
             }
-          ],
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                status: { type: Type.STRING },
-                findings: { type: Type.ARRAY, items: { type: Type.STRING } },
-                summary: { type: Type.STRING }
-              },
-              required: ["status", "findings", "summary"]
-            }
-          }
-        });
+          });
 
-        const analysis = JSON.parse(genResult.text || '{}');
-        const resultWithMeta = {
-          ...analysis,
-          fileId: img.id,
-          fileName: img.name,
-          folderId: folderId,
-          analyzedAt: new Date().toISOString()
-        };
-        
-        individualResults.push(resultWithMeta);
-        
-        // Save to Google Sheets history
-        await saveAnalysisResult(resultWithMeta);
-        
-        // Update cache if it exists
-        if (historyCache) {
-          historyCache.data.push(resultWithMeta);
+          const analysis = JSON.parse(genResult.text || '{}');
+          const resultWithMeta = {
+            ...analysis,
+            fileId: img.id,
+            fileName: img.name,
+            folderId: folderId,
+            analyzedAt: new Date().toISOString()
+          };
+          
+          // Save to Google Sheets history
+          await saveAnalysisResult(resultWithMeta);
+          
+          // Update cache if it exists
+          if (historyCache) {
+            historyCache.data.push(resultWithMeta);
+          }
+          
+          return resultWithMeta;
+        } catch (err) {
+          console.error(`Failed to analyze image ${img.name}:`, err);
+          return null;
         }
-        
-        // Small delay between images to avoid rate limits
-        await new Promise(resolve => setTimeout(resolve, 1500));
-      } catch (err) {
-        console.error(`Failed to analyze image ${img.name}:`, err);
+      });
+
+      const chunkResults = await Promise.all(chunkPromises);
+      individualResults.push(...chunkResults.filter(r => r !== null));
+      
+      // Small delay between chunks to be nice to the API
+      if (i + CHUNK_SIZE < allImages.length) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
 
