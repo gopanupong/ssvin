@@ -1054,12 +1054,17 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
 
   const handleAnalyze = async (substationName: string, force = false) => {
     setAnalyzing(substationName);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutes
+    
     try {
       const res = await fetch('/api/analyze-substation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ substationName, month: selectedMonth + 1, year: selectedYear, force })
+        body: JSON.stringify({ substationName, month: selectedMonth + 1, year: selectedYear, force }),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
       const data = await res.json();
       console.log("Analysis result:", data);
       if (data.error) {
@@ -1076,9 +1081,14 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
         }
         fetchHealthIndex();
       }
-    } catch (err) {
-      console.error(err);
-      alert("เกิดข้อผิดพลาดในการวิเคราะห์");
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        alert("การวิเคราะห์ใช้เวลานานเกินไป (เกิน 10 นาที) กรุณาตรวจสอบผลลัพธ์ในภายหลัง หรือใช้วิธีวิเคราะห์ทีละภาพ");
+      } else {
+        console.error(err);
+        alert("เกิดข้อผิดพลาดในการวิเคราะห์");
+      }
     } finally {
       setAnalyzing(null);
     }

@@ -1166,18 +1166,17 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
       return res.json({ folderId });
     }
 
-    // 4. Collect representative images (max 5 from different days/categories)
+    // 4. Collect all images from matching folders
     const allImages: any[] = [];
     for (const folder of matchingFolders) {
       const filesQuery = await driveService.files.list({
         q: `'${folder.id}' in parents and mimeType contains 'image/' and trashed = false`,
         fields: "files(id, name, mimeType)",
-        pageSize: 3
+        pageSize: 1000 // Get all images in the folder
       });
       if (filesQuery.data.files) {
         allImages.push(...filesQuery.data.files);
       }
-      if (allImages.length >= 5) break;
     }
 
     if (allImages.length === 0) {
@@ -1297,12 +1296,22 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
     // 6. Aggregate results
     const isRed = individualResults.some(r => r.status === 'Red');
     const allFindings = Array.from(new Set(individualResults.flatMap(r => r.findings || [])));
-    const summaryText = individualResults.map((r, i) => `ภาพที่ ${i+1}: ${r.summary}`).join('\n');
+    
+    const redResults = individualResults.filter(r => r.status === 'Red');
+    const greenResults = individualResults.filter(r => r.status === 'Green');
+    
+    let summaryText = `วิเคราะห์ทั้งหมด ${individualResults.length} ภาพ: พบปัญหา ${redResults.length} ภาพ, ปกติ ${greenResults.length} ภาพ\n`;
+    if (redResults.length > 0) {
+      summaryText += `ปัญหาที่พบ: ${allFindings.join(', ')}\n`;
+      summaryText += redResults.map((r, i) => `- ${r.fileName || `ภาพที่ ${i+1}`}: ${r.summary}`).join('\n');
+    } else {
+      summaryText += `ทุกภาพอยู่ในสภาพปกติเรียบร้อยดี`;
+    }
 
     const finalAnalysis = {
       status: isRed ? 'Red' : 'Green',
       findings: allFindings,
-      summary: summaryText.length > 500 ? summaryText.substring(0, 497) + "..." : summaryText
+      summary: summaryText.length > 1000 ? summaryText.substring(0, 997) + "..." : summaryText
     };
     
     // 7. Save to DB
