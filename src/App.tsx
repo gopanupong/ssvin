@@ -1592,30 +1592,39 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                           </div>
                         </div>
                         
-                        <div className="p-3">
-                          <p className="text-[10px] font-bold text-slate-800 truncate mb-1">{img.name}</p>
-                          {img.analysis && !img.analysis.error ? (
-                            <div className="space-y-1">
+                        <div className="p-3 flex flex-col h-full">
+                          <p className="text-[10px] font-bold text-slate-800 truncate mb-2" title={img.name}>{img.name}</p>
+                          
+                          <Button 
+                            onClick={() => selectedFolderId && handleAnalyzeImage(img, selectedFolderId)}
+                            disabled={isBatchAnalyzing || currentlyAnalyzingId === img.id}
+                            className="w-full py-1.5 text-[9px] h-auto font-bold mb-2"
+                            variant={img.analysis?.error ? "destructive" : (img.analysis ? "ghost" : "outline")}
+                          >
+                            {currentlyAnalyzingId === img.id ? (
+                              <><Loader2 size={10} className="animate-spin mr-1" /> กำลังวิเคราะห์...</>
+                            ) : (img.analysis?.error ? "ลองใหม่อีกครั้ง" : (img.analysis ? "วิเคราะห์ซ้ำ" : "วิเคราะห์ภาพนี้"))}
+                          </Button>
+
+                          {img.analysis && !img.analysis.error && (
+                            <div className="mt-auto pt-2 border-t border-slate-50 space-y-1.5">
                               <div className="flex flex-wrap gap-1">
-                                {img.analysis.findings && img.analysis.findings.map((f: string) => (
-                                  <span key={f} className="text-[8px] bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded font-bold">
-                                    {f === 'Weed' ? 'หญ้า' : (f === 'Bird Droppings' ? 'ขี้นก' : f)}
+                                {img.analysis.findings && img.analysis.findings.length > 0 ? (
+                                  img.analysis.findings.map((f: string) => (
+                                    <span key={f} className="text-[8px] bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded font-bold border border-rose-100">
+                                      {f === 'Weed' ? 'หญ้า' : (f === 'Bird Droppings' ? 'ขี้นก' : f)}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-[8px] bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded font-bold border border-emerald-100">
+                                    สะอาดปกติ
                                   </span>
-                                ))}
+                                )}
                               </div>
-                              <p className="text-[8px] text-slate-400 italic line-clamp-2">{img.analysis.summary}</p>
+                              <p className="text-[9px] text-slate-500 leading-tight bg-slate-50 p-1.5 rounded border border-slate-100 italic">
+                                {img.analysis.summary}
+                              </p>
                             </div>
-                          ) : (
-                            <Button 
-                              onClick={() => selectedFolderId && handleAnalyzeImage(img, selectedFolderId)}
-                              disabled={isBatchAnalyzing || currentlyAnalyzingId === img.id}
-                              className="w-full py-1 text-[8px] h-auto"
-                              variant={img.analysis?.error ? "destructive" : "outline"}
-                            >
-                              {currentlyAnalyzingId === img.id ? (
-                                <><Loader2 size={10} className="animate-spin mr-1" /> กำลังวิเคราะห์...</>
-                              ) : (img.analysis?.error ? "ลองใหม่อีกครั้ง" : "วิเคราะห์ภาพนี้")}
-                            </Button>
                           )}
                         </div>
                       </div>

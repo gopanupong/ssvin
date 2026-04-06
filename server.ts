@@ -373,6 +373,14 @@ app.post("/api/analyze-image", async (req: any, res: any) => {
   }
 
   try {
+    // 0. Check history first to avoid re-analysis
+    const history = await getAnalysisHistory();
+    const existing = history.find(h => h.fileId === fileId);
+    if (existing) {
+      console.log(`Image ${fileName} already analyzed, returning cached result.`);
+      return res.json(existing);
+    }
+
     // 1. Download image
     const response = await driveService.files.get({
       fileId,
