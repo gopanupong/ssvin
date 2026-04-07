@@ -1174,24 +1174,25 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
             </a>
             
             <div className="flex bg-slate-200 p-1 rounded-xl">
-            <button 
-              onClick={() => setActiveTab('progress')}
-              className={cn(
-                "px-4 py-2 rounded-lg text-xs font-bold transition-all",
-                activeTab === 'progress' ? "bg-white text-violet-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
-              )}
-            >
-              ความคืบหน้า
-            </button>
-            <button 
-              onClick={() => setActiveTab('health')}
-              className={cn(
-                "px-4 py-2 rounded-lg text-xs font-bold transition-all",
-                activeTab === 'health' ? "bg-white text-violet-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
-              )}
-            >
-              Health Index
-            </button>
+              <button 
+                onClick={() => setActiveTab('progress')}
+                className={cn(
+                  "px-4 py-2 rounded-lg text-xs font-bold transition-all",
+                  activeTab === 'progress' ? "bg-white text-violet-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                )}
+              >
+                ความคืบหน้า
+              </button>
+              <button 
+                onClick={() => setActiveTab('health')}
+                className={cn(
+                  "px-4 py-2 rounded-lg text-xs font-bold transition-all",
+                  activeTab === 'health' ? "bg-white text-violet-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                )}
+              >
+                Health Index
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-col items-end gap-1">
