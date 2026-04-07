@@ -636,6 +636,11 @@ app.post("/api/init-upload", async (req: any, res: any) => {
     const tokenResponse = await auth.getAccessToken();
     const accessToken = tokenResponse.token;
 
+    if (!accessToken) {
+      console.error("Access token is empty");
+      return res.status(500).json({ error: "Failed to generate Google Access Token. Please check your Refresh Token." });
+    }
+
     const dateObj = timestamp ? new Date(timestamp) : new Date();
     const dateStr = new Intl.DateTimeFormat("th-TH", {
       day: "2-digit",

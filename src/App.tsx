@@ -348,25 +348,28 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
     );
   };
 
+  const checkDevice = () => {
+    const ua = navigator.userAgent;
+    const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(ua);
+    const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    const isIPadOS = (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const finalIsMobile = isMobileDevice || isIPadOS || hasTouch;
+    setIsMobile(finalIsMobile);
+  };
+
   useEffect(() => {
-    const checkDevice = () => {
-      const ua = navigator.userAgent;
-      const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(ua);
-      
-      // Check for touch capabilities (Most PCs don't have this, but all Tablets/Phones do)
-      const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-      
-      // Special check for iPadOS (iPad Pro/Air/Mini on iOS 13+)
-      const isIPadOS = (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-      
-      // If it has touch and is not a massive screen, or matches mobile UA, allow it
-      const finalIsMobile = isMobileDevice || isIPadOS || hasTouch;
-      
-      setIsMobile(finalIsMobile);
-      console.log("Device Check:", { ua, isMobileDevice, isIPadOS, hasTouch, finalIsMobile });
-    };
     checkDevice();
     getGeoLocation();
+    
+    // Check Drive status
+    fetch('/api/drive/status')
+      .then(res => res.json())
+      .then(data => {
+        if (!data.connected) {
+          alert("⚠️ คำเตือน: ระบบยังไม่ได้เชื่อมต่อ Google Drive กรุณาแจ้งผู้ดูแลระบบให้ตั้งค่า GOOGLE_REFRESH_TOKEN ก่อนส่งรายงาน");
+        }
+      })
+      .catch(err => console.error("Failed to fetch drive status:", err));
   }, []);
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>, key: string) => {
@@ -557,7 +560,14 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
         });
 
         if (!response.ok) {
-          throw new Error(`Drive upload failed: ${response.statusText}`);
+          let errorMsg = response.statusText;
+          try {
+            const errorData = await response.json();
+            errorMsg = errorData.error?.message || response.statusText;
+          } catch (e) {
+            // Ignore if not JSON
+          }
+          throw new Error(`Drive upload failed (${response.status}): ${errorMsg}`);
         }
         return await response.json();
       };
@@ -891,13 +901,36 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
 
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [driveStatus, setDriveStatus] = useState<{ connected: boolean; configured: boolean } | null>(null);
+  const [testingConnection, setTestingConnection] = useState(false);
 
-  useEffect(() => {
+  const checkDriveStatus = () => {
     fetch('/api/drive/status')
       .then(res => res.json())
       .then(data => setDriveStatus(data))
       .catch(err => console.error("Failed to fetch drive status:", err));
+  };
+
+  useEffect(() => {
+    checkDriveStatus();
   }, []);
+
+  const testDriveConnection = async () => {
+    setTestingConnection(true);
+    try {
+      const res = await fetch('/api/drive/subfolders/root');
+      const data = await res.json();
+      if (res.ok) {
+        alert("✅ เชื่อมต่อ Google Drive สำเร็จ! สามารถอ่านข้อมูลได้ปกติ");
+      } else {
+        alert(`❌ การเชื่อมต่อล้มเหลว: ${data.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      alert("❌ เกิดข้อผิดพลาดในการเชื่อมต่อ");
+    } finally {
+      setTestingConnection(false);
+      checkDriveStatus();
+    }
+  };
 
   const fetchImagesInFolder = async (folderId: string) => {
     setSelectedFolderId(folderId);
@@ -1172,6 +1205,17 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
               </div>
               {driveStatus?.connected ? "เชื่อมต่อ Google Drive แล้ว" : "เชื่อมต่อ Google Drive"}
             </a>
+            
+            {driveStatus?.connected && (
+              <button 
+                onClick={testDriveConnection}
+                disabled={testingConnection}
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm disabled:opacity-50"
+              >
+                {testingConnection ? <Loader2 size={16} className="animate-spin" /> : <ClipboardCheck size={16} />}
+                ทดสอบการเชื่อมต่อ
+              </button>
+            )}
             
             <div className="flex bg-slate-200 p-1 rounded-xl">
               <button 
