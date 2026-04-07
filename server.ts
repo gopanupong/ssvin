@@ -560,7 +560,21 @@ let cachedOAuth2Client: any = null;
 let lastRefreshToken: string | null = null;
 
 function getGoogleAuth() {
-  // Priority 1: Service Account (More stable for server-to-server)
+  // Priority 1: OAuth2 Refresh Token (User account has storage quota)
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+  if (refreshToken) {
+    if (cachedOAuth2Client && lastRefreshToken === refreshToken) {
+      return cachedOAuth2Client;
+    }
+    
+    const oauth2Client = getOAuth2Client();
+    oauth2Client.setCredentials({ refresh_token: refreshToken });
+    cachedOAuth2Client = oauth2Client;
+    lastRefreshToken = refreshToken;
+    return oauth2Client;
+  }
+
+  // Priority 2: Service Account (Fallback)
   const authJson = process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON;
   if (authJson) {
     try {
@@ -573,20 +587,6 @@ function getGoogleAuth() {
     } catch (err) {
       console.error("Failed to initialize Service Account Auth:", err);
     }
-  }
-
-  // Priority 2: OAuth2 Refresh Token
-  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
-  if (refreshToken) {
-    if (cachedOAuth2Client && lastRefreshToken === refreshToken) {
-      return cachedOAuth2Client;
-    }
-    
-    const oauth2Client = getOAuth2Client();
-    oauth2Client.setCredentials({ refresh_token: refreshToken });
-    cachedOAuth2Client = oauth2Client;
-    lastRefreshToken = refreshToken;
-    return oauth2Client;
   }
 
   return null;
