@@ -291,20 +291,73 @@ app.get("/api/auth/google/callback", async (req, res) => {
 
     // This HTML matches the image you provided
     res.send(`
-      <div style="font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; border: 1px solid #eee; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
-        <h2 style="color: #6366f1; display: flex; align-items: center; gap: 10px;">
-          <span style="background: #10b981; color: white; border-radius: 4px; padding: 2px 6px; font-size: 18px;">✓</span> 
-          คัดลอก Refresh Token ของคุณ
-        </h2>
-        <p style="color: #1f2937; font-weight: 500;">นำค่าด้านล่างนี้ไปใส่ใน Vercel Environment Variables ชื่อ</p>
-        <p style="font-weight: 800; font-size: 18px; color: #000;">GOOGLE_REFRESH_TOKEN</p>
-        
-        <textarea readonly style="width: 100%; height: 120px; padding: 15px; border-radius: 8px; border: 1px solid #ddd; background: #f9fafb; font-family: monospace; font-size: 14px; margin: 20px 0; resize: none;">${refreshToken}</textarea>
-        
-        <div style="background: #fff1f2; padding: 15px; border-radius: 8px; border: 1px solid #ffe4e6; color: #e11d48; font-weight: 600; text-align: center;">
-          ขั้นตอนสุดท้าย: เมื่อใส่ค่าใน Vercel แล้ว อย่าลืมกด <span style="color: #f43f5e;">Redeploy</span> เพื่อให้ระบบเริ่มทำงานนะครับ
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Google OAuth Success</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+        <style>
+          body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+          .token-container { word-break: break-all; }
+        </style>
+      </head>
+      <body class="flex items-center justify-center min-h-screen p-4">
+        <div class="bg-white rounded-[32px] shadow-xl shadow-slate-200/50 border border-slate-100 p-10 max-w-2xl w-full text-center">
+          <div class="flex items-center justify-center gap-4 mb-8">
+            <div class="bg-[#10b981] rounded-xl p-2">
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </div>
+            <h1 class="text-4xl font-extrabold text-slate-900">คัดลอก <span class="text-[#6366f1]">Refresh Token</span> ของคุณ</h1>
+          </div>
+
+          <p class="text-xl text-slate-600 mb-2">นำค่าด้านล่างนี้ไปใส่ใน Vercel Environment Variables ชื่อ</p>
+          <p class="text-3xl font-black text-slate-900 mb-10">GOOGLE_REFRESH_TOKEN</p>
+
+          <div class="relative bg-slate-50 rounded-2xl border-2 border-slate-100 p-8 mb-10 text-left group">
+            <div id="tokenText" class="text-lg font-mono text-slate-700 break-all leading-relaxed pr-20">${refreshToken}</div>
+            <button 
+              onclick="copyToken()" 
+              id="copyBtn"
+              class="absolute top-6 right-6 bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-sm active:scale-95"
+            >
+              คัดลอก
+            </button>
+          </div>
+
+          <div class="bg-[#fff1f2] border border-[#ffe4e6] rounded-2xl p-6 mb-12">
+            <p class="text-xl font-extrabold text-[#e11d48] leading-relaxed">
+              ขั้นตอนสุดท้าย: เมื่อใส่ค่าใน Vercel แล้ว อย่าลืมกด <a href="#" class="underline decoration-2 underline-offset-4">Redeploy</a> เพื่อให้ระบบเริ่มทำงานนะครับ
+            </p>
+          </div>
+
+          <p class="text-slate-400 text-sm italic mb-6 leading-relaxed max-w-lg mx-auto">
+            หมายเหตุ: หากคุณต้องการให้แอปทำงานต่อทันทีโดยไม่ต้องปิดหน้าต่างนี้ ระบบได้ส่งสัญญาณไปยังแอปหลักแล้ว
+          </p>
+
+          <button onclick="window.close()" class="text-slate-400 font-bold hover:text-slate-600 transition-colors underline underline-offset-4">
+            ปิดหน้าต่างนี้
+          </button>
         </div>
-      </div>
+
+        <script>
+          function copyToken() {
+            const token = document.getElementById('tokenText').innerText;
+            navigator.clipboard.writeText(token).then(() => {
+              const btn = document.getElementById('copyBtn');
+              btn.innerText = 'คัดลอกแล้ว!';
+              btn.classList.add('bg-emerald-50', 'text-emerald-600', 'border-emerald-200');
+              setTimeout(() => {
+                btn.innerText = 'คัดลอก';
+                btn.classList.remove('bg-emerald-50', 'text-emerald-600', 'border-emerald-200');
+              }, 2000);
+            });
+          }
+        </script>
+      </body>
+      </html>
     `);
   } catch (error: any) {
     res.status(500).send("Auth Failed: " + error.message);
@@ -312,6 +365,23 @@ app.get("/api/auth/google/callback", async (req, res) => {
 });
 
 // --- New Drive & AI Analysis Endpoints ---
+
+// Check Google Drive connection status
+app.get("/api/drive/status", (req, res) => {
+  const hasClientId = !!process.env.GOOGLE_CLIENT_ID;
+  const hasClientSecret = !!process.env.GOOGLE_CLIENT_SECRET;
+  const hasRefreshToken = !!process.env.GOOGLE_REFRESH_TOKEN;
+  
+  res.json({
+    connected: hasRefreshToken,
+    configured: hasClientId && hasClientSecret,
+    missing: {
+      clientId: !hasClientId,
+      clientSecret: !hasClientSecret,
+      refreshToken: !hasRefreshToken
+    }
+  });
+});
 
 // List subfolders of a parent folder
 app.get("/api/drive/subfolders/:parentFolderId", async (req: any, res: any) => {

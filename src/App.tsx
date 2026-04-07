@@ -890,6 +890,14 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   const [analysisSummary, setAnalysisSummary] = useState({ total: 0, clean: 0, issues: 0, weeds: 0, birdDroppings: 0 });
 
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [driveStatus, setDriveStatus] = useState<{ connected: boolean; configured: boolean } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/drive/status')
+      .then(res => res.json())
+      .then(data => setDriveStatus(data))
+      .catch(err => console.error("Failed to fetch drive status:", err));
+  }, []);
 
   const fetchImagesInFolder = async (folderId: string) => {
     setSelectedFolderId(folderId);
@@ -1143,8 +1151,29 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
             </button>
             <h2 className="text-2xl font-bold text-slate-900">Executive Dashboard</h2>
           </div>
-          
-          <div className="flex bg-slate-200 p-1 rounded-xl">
+
+          <div className="flex items-center gap-2">
+            <a 
+              href="/api/auth/google" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-sm",
+                driveStatus?.connected 
+                  ? "bg-emerald-50 border border-emerald-100 text-emerald-600 hover:bg-emerald-100" 
+                  : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+              )}
+            >
+              <div className={cn(
+                "w-5 h-5 rounded-md flex items-center justify-center",
+                driveStatus?.connected ? "bg-emerald-500" : "bg-slate-200"
+              )}>
+                <CheckCircle2 size={12} className="text-white" />
+              </div>
+              {driveStatus?.connected ? "เชื่อมต่อ Google Drive แล้ว" : "เชื่อมต่อ Google Drive"}
+            </a>
+            
+            <div className="flex bg-slate-200 p-1 rounded-xl">
             <button 
               onClick={() => setActiveTab('progress')}
               className={cn(
