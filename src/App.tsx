@@ -380,28 +380,34 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
       const fileTime = file.lastModified;
       const diffSeconds = Math.abs(now - fileTime) / 1000;
       
-      // Detect LINE Browser
-      const isLine = /Line/i.test(navigator.userAgent);
-      
       // Strict validation for Live Photo
-      // Increase to 600 seconds (10 minutes) to be extremely lenient for slow devices
-      const maxAllowedDiff = 600;
+      // Reduce to 60 seconds (1 minute) to ensure it's a fresh photo taken via camera
+      const maxAllowedDiff = 60;
 
-      // Filename and Metadata validation
+      // Expanded list of patterns that indicate a file from an album/gallery or other apps
       const fileName = file.name.toLowerCase();
-      const isLikelyAlbum = fileName.includes('screenshot') || 
-                            fileName.includes('fb_img') || 
-                            fileName.includes('line_album') ||
-                            fileName.includes('save') ||
-                            fileName.includes('download') ||
-                            fileName.includes('whatsapp') ||
-                            fileName.includes('telegram') ||
-                            fileName.includes('facebook') ||
-                            fileName.includes('messenger');
+      const albumPatterns = [
+        'screenshot', 'fb_img', 'line_album', 'save', 'download', 
+        'whatsapp', 'telegram', 'facebook', 'messenger', 'instagram',
+        'viber', 'wechat', 'snapchat', 'tiktok', 'twitter', 'x_img',
+        'image_', 'img_', 'dsc_', 'photo_', 'pixel_', 'samsung_', 'huawei_',
+        'oppo_', 'vivo_', 'xiaomi_', 'realme_', 'iphone_', 'apple_',
+        'shared_', 'copy_', 'edit_', 'modified_', 'resized_', 'compressed_',
+        'gallery', 'album', 'photos', 'camera_roll', 'dcim'
+      ];
+
+      const isLikelyAlbum = albumPatterns.some(pattern => fileName.includes(pattern));
 
       if (diffSeconds > maxAllowedDiff || isLikelyAlbum) {
-        const reason = isLikelyAlbum ? "ตรวจพบชื่อไฟล์ที่มาจากอัลบั้ม/แอปอื่น" : `เวลาที่ถ่ายต่างจากปัจจุบันเกินไป (${Math.round(diffSeconds)} วินาที, ขีดจำกัด ${maxAllowedDiff} วินาที)`;
-        alert(`❌ ฟังก์ชันเลือกรูปจากอัลบั้มถูกปิดใช้งาน\n\nเหตุผล: ${reason}\n\nคำแนะนำ: กรุณากดปุ่ม 'ถ่ายภาพ' และเลือก 'กล้อง' (Camera) เพื่อถ่ายภาพหน้างานจริงเท่านั้น\n\n(ห้ามเลือกรูปจาก แกลเลอรี หรือ อัลบั้ม)`);
+        let reason = "";
+        if (isLikelyAlbum) {
+          reason = "ตรวจพบชื่อไฟล์ที่มาจากอัลบั้ม, แกลเลอรี หรือแอปพลิเคชันอื่น";
+        } else {
+          reason = `รูปภาพนี้ถูกถ่ายไว้นานเกินไป (${Math.round(diffSeconds)} วินาทีที่แล้ว)\nระบบอนุญาตให้ส่งเฉพาะภาพที่ถ่ายสดใหม่ภายใน ${maxAllowedDiff} วินาทีเท่านั้น`;
+        }
+
+        alert(`❌ ระบบปิดใช้งานการเลือกรูปจากอัลบั้ม (ทุก Browser)\n\nเหตุผล: ${reason}\n\nคำแนะนำ:\n1. กรุณากดปุ่ม 'ถ่ายภาพ' อีกครั้ง\n2. เลือก 'กล้อง' (Camera) เพื่อถ่ายภาพใหม่ทันที\n3. ห้ามเลือกจาก 'คลังรูปภาพ' (Photo Library) หรือ 'ไฟล์' (Files)`);
+        
         e.target.value = '';
         return;
       }
