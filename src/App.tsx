@@ -1244,39 +1244,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
             <h2 className="text-2xl font-bold text-slate-900">Executive Dashboard</h2>
           </div>
 
-          <div className="flex items-center gap-2">
-            <a 
-              href="/api/auth/google" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-sm",
-                driveStatus?.connected 
-                  ? "bg-emerald-50 border border-emerald-100 text-emerald-600 hover:bg-emerald-100" 
-                  : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
-              )}
-            >
-              <div className={cn(
-                "w-5 h-5 rounded-md flex items-center justify-center",
-                driveStatus?.connected ? "bg-emerald-500" : "bg-slate-200"
-              )}>
-                <CheckCircle2 size={12} className="text-white" />
-              </div>
-              {driveStatus?.connected ? "เชื่อมต่อ Google Drive แล้ว" : "เชื่อมต่อ Google Drive"}
-            </a>
-            
-            {driveStatus?.connected && (
-              <button 
-                onClick={testDriveConnection}
-                disabled={testingConnection}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm disabled:opacity-50"
-              >
-                {testingConnection ? <Loader2 size={16} className="animate-spin" /> : <ClipboardCheck size={16} />}
-                ทดสอบการเชื่อมต่อ
-              </button>
-            )}
-            
-            <div className="flex bg-slate-200 p-1 rounded-xl">
+          <div className="flex bg-slate-200 p-1 rounded-xl">
               <button 
                 onClick={() => setActiveTab('progress')}
                 className={cn(
@@ -1296,7 +1264,6 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                 Health Index
               </button>
             </div>
-          </div>
 
           <div className="flex flex-col items-end gap-1">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">เลือกเดือนที่ต้องการตรวจสอบ</span>
