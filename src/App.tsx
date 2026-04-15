@@ -732,77 +732,102 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                 const isMandatory = (point as any).mandatory;
                 const isEnabled = isMandatory || enabledCategories.includes(point.id);
                 return (
-                  <div key={point.id} className={cn("space-y-3 p-4 rounded-2xl border transition-all", isEnabled ? "bg-white border-slate-100 shadow-sm" : "bg-slate-50 border-slate-200 opacity-60")}>
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-3">
-                        {!isMandatory && (
+                  <div 
+                    key={point.id} 
+                    className={cn(
+                      "space-y-4 p-5 rounded-3xl border transition-all duration-300", 
+                      isEnabled 
+                        ? "bg-white border-slate-100 shadow-md shadow-slate-200/50" 
+                        : "bg-slate-50 border-slate-200 opacity-70"
+                    )}
+                  >
+                    <div className="flex justify-between items-start gap-4">
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className={cn("font-bold text-base", isEnabled ? "text-slate-900" : "text-slate-400")}>
+                            {point.label}
+                          </h4>
+                          {isMandatory && (
+                            <span className="bg-amber-100 text-amber-700 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter">
+                              Mandatory
+                            </span>
+                          )}
+                        </div>
+                        <p className={cn("text-xs leading-relaxed", isEnabled ? "text-slate-500" : "text-slate-400")}>
+                          {point.desc}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col items-end gap-3">
+                        {!isMandatory ? (
                           <button
                             onClick={() => toggleCategory(point.id)}
                             className={cn(
-                              "w-12 h-6 rounded-full relative transition-colors duration-200 focus:outline-none",
-                              isEnabled ? "bg-violet-600" : "bg-slate-300"
+                              "w-12 h-6 rounded-full relative transition-all duration-300 focus:outline-none shadow-inner",
+                              isEnabled ? "bg-emerald-500" : "bg-slate-300"
                             )}
                           >
                             <div className={cn(
-                              "absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-200",
+                              "absolute top-1 w-4 h-4 rounded-full bg-white shadow-md transition-all duration-300 flex items-center justify-center",
                               isEnabled ? "left-7" : "left-1"
-                            )} />
+                            )}>
+                              <div className={cn("w-1 h-1 rounded-full", isEnabled ? "bg-emerald-500" : "bg-slate-300")} />
+                            </div>
                           </button>
+                        ) : (
+                          <div className="w-12 h-6 flex items-center justify-center">
+                            <CheckCircle2 size={18} className="text-emerald-500" />
+                          </div>
                         )}
-                        {isMandatory && (
-                          <div className="w-2 h-2 rounded-full bg-violet-600 animate-pulse" />
+                        
+                        {isEnabled && (
+                          <label className="bg-violet-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 active:scale-90 transition-all cursor-pointer shadow-lg shadow-violet-200">
+                            <Camera size={16} />
+                            <span>ถ่ายภาพ</span>
+                            <input 
+                              type="file" 
+                              accept="image/*" 
+                              capture="environment" 
+                              className="hidden" 
+                              onChange={(e) => onFileChange(e, point.id)} 
+                            />
+                          </label>
                         )}
-                        <div>
-                          <h4 className={cn("font-bold text-sm", isEnabled ? "text-slate-800" : "text-slate-400")}>{point.label}</h4>
-                          <p className="text-[10px] text-slate-500">{point.desc}</p>
-                        </div>
                       </div>
-                      {isEnabled && (
-                        <label className="bg-violet-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 active:scale-95 transition-all cursor-pointer shadow-md shadow-violet-100">
-                          <Camera size={14} /> ถ่ายภาพ
-                          <input 
-                            type="file" 
-                            accept="image/*" 
-                            capture="environment" 
-                            className="hidden" 
-                            onChange={(e) => onFileChange(e, point.id)} 
-                          />
-                        </label>
-                      )}
                     </div>
                     
                     {isEnabled && (
-                      <div className="grid grid-cols-1 gap-4">
+                      <div className="grid grid-cols-1 gap-4 pt-2">
                         {photos[point.id].map((item, i) => (
-                          <div key={i} className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm space-y-3">
-                            <div className="aspect-video bg-slate-200 rounded-xl overflow-hidden relative group">
+                          <div key={i} className="bg-slate-50 p-3 rounded-2xl border border-slate-100 space-y-3">
+                            <div className="aspect-video bg-slate-200 rounded-xl overflow-hidden relative group shadow-inner">
                               <img src={URL.createObjectURL(item.file)} className="w-full h-full object-cover" />
                               <button 
                                 onClick={() => setPhotos(prev => ({
                                   ...prev,
                                   [point.id]: prev[point.id].filter((_, idx) => idx !== i)
                                 }))}
-                                className="absolute top-2 right-2 w-8 h-8 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-lg"
+                                className="absolute top-2 right-2 w-8 h-8 bg-rose-500/90 backdrop-blur-sm text-white rounded-full flex items-center justify-center shadow-lg active:scale-75 transition-all"
                               >
-                                ×
+                                <Plus size={20} className="rotate-45" />
                               </button>
                             </div>
-                            <div className="space-y-1">
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">คำอธิบายเพิ่มเติม (ถ้ามี)</p>
+                            <div className="space-y-1.5">
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">บันทึกเพิ่มเติม</p>
                               <input 
                                 type="text"
-                                placeholder="ระบุรายละเอียดของภาพ..."
+                                placeholder="พิมพ์รายละเอียดที่นี่..."
                                 value={item.comment}
                                 onChange={(e) => handleCommentChange(point.id, i, e.target.value)}
-                                className="w-full bg-slate-50 border-none rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-violet-500 outline-none"
+                                className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs focus:ring-2 focus:ring-violet-500 outline-none shadow-sm"
                               />
                             </div>
                           </div>
                         ))}
                         {photos[point.id].length === 0 && (
-                          <div className="py-8 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center text-slate-400">
-                            <Camera size={24} className="mb-2 opacity-30" />
-                            <span className="text-xs font-bold">ยังไม่มีรูปภาพ</span>
+                          <div className="py-10 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center text-slate-300 bg-slate-50/50">
+                            <ImageIcon size={32} className="mb-2 opacity-20" />
+                            <span className="text-[10px] font-bold uppercase tracking-widest">ยังไม่มีรูปภาพ</span>
                           </div>
                         )}
                       </div>
@@ -813,33 +838,33 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
             </div>
           </section>
 
-          <section className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-            <div className="flex justify-between items-center mb-1">
+          <section className="bg-white p-5 rounded-3xl border border-slate-100 shadow-md shadow-slate-200/50">
+            <div className="flex justify-between items-start mb-2">
               <div className="flex items-center gap-3">
                 <div className="w-2 h-2 rounded-full bg-violet-600 animate-pulse" />
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-400">กระดาษ Check List (A4)</p>
+                <p className="text-sm font-bold text-slate-900 uppercase tracking-tight">กระดาษ Check List (A4)</p>
               </div>
-              <span className="text-xs font-bold text-violet-600 bg-violet-50 px-2 py-1 rounded-full">
+              <span className="text-[10px] font-black text-violet-600 bg-violet-50 px-2 py-1 rounded-full border border-violet-100">
                 {checklists.length} แผ่น
               </span>
             </div>
-            <p className="text-[10px] text-slate-500 mb-4">ถ่ายกระดาษ Check List ทุกหน้า</p>
+            <p className="text-xs text-slate-500 mb-5 leading-relaxed">ถ่ายกระดาษ Check List ทุกหน้าให้ครบถ้วน</p>
             
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-3 gap-3">
                 {checklists.map((file, i) => (
-                  <div key={i} className="aspect-square bg-slate-200 rounded-lg overflow-hidden relative group">
+                  <div key={i} className="aspect-square bg-slate-200 rounded-2xl overflow-hidden relative group shadow-inner">
                     <img src={URL.createObjectURL(file)} className="w-full h-full object-cover" />
                     <button 
                       onClick={() => setChecklists(prev => prev.filter((_, idx) => idx !== i))}
-                      className="absolute top-0.5 right-0.5 w-5 h-5 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-lg text-xs"
+                      className="absolute top-1 right-1 w-6 h-6 bg-rose-500/90 backdrop-blur-sm text-white rounded-full flex items-center justify-center shadow-lg text-xs active:scale-75 transition-all"
                     >
-                      ×
+                      <Plus size={14} className="rotate-45" />
                     </button>
                   </div>
                 ))}
-                <label className="aspect-square border-2 border-dashed border-slate-300 rounded-lg flex flex-col items-center justify-center text-slate-400 hover:border-violet-500 hover:text-violet-500 transition-all cursor-pointer">
-                  <Camera size={20} />
-                  <span className="text-[8px] font-bold mt-1">ถ่ายภาพ</span>
+                <label className="aspect-square border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center text-slate-400 hover:border-violet-500 hover:text-violet-500 transition-all cursor-pointer bg-slate-50/50 active:bg-violet-50">
+                  <Camera size={24} className="opacity-40" />
+                  <span className="text-[9px] font-black uppercase tracking-widest mt-2">ถ่ายภาพ</span>
                   <input 
                     type="file" 
                     accept="image/*" 
