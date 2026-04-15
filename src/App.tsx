@@ -55,15 +55,11 @@ const Card = ({ children, className, onClick }: { children: React.ReactNode; cla
 // --- Pages ---
 
 const CATEGORY_LABELS: {[key: string]: string} = {
-  building: 'อาคารควบคุม',
   yard: 'ลานไกไฟฟ้า',
   roof: 'หลังคาอาคาร',
-  annunciation: 'Annunciation',
   battery: 'แบตเตอรี่',
-  grounding: 'กราวด์ทองแดง',
   security: 'รปภ.',
   fence: 'รั้วสถานี',
-  lighting: 'ระบบแสงสว่าง',
   checklist: 'Check List',
 };
 
@@ -305,15 +301,11 @@ const SelectionPage = ({ onSelect, onLogout }: { onSelect: (sub: typeof SUBSTATI
 
 const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substation: typeof SUBSTATIONS[0]; employeeId: string; onBack: () => void; onComplete: () => void }) => {
   const [photos, setPhotos] = useState<{ [key: string]: { file: File; comment: string }[] }>({
-    building: [],
     yard: [],
     roof: [],
-    annunciation: [],
     battery: [],
-    grounding: [],
     security: [],
     fence: [],
-    lighting: [],
   });
   const [checklists, setChecklists] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -723,15 +715,11 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">จุดตรวจสอบมาตรฐาน (Fixed-Point)</p>
             <div className="space-y-6">
               {[
-                { id: 'building', label: 'อาคารควบคุม', desc: 'ความสะอาดภายใน/ภายนอก' },
                 { id: 'yard', label: 'ลานไกไฟฟ้า', desc: 'การจัดการวัชพืช/หญ้า' },
                 { id: 'roof', label: 'หลังคาอาคาร', desc: 'สภาพความสะอาด/รอยรั่ว' },
-                { id: 'annunciation', label: 'Annunciation', desc: 'ไฟแจ้งเตือน CSCS/SCPS/หน้าตู้' },
                 { id: 'battery', label: 'แบตเตอรี่', desc: 'น้ำกลั่นระดับ Upper Level' },
-                { id: 'grounding', label: 'กราวด์ทองแดง', desc: 'เชื่อมภายในอาคาร (ทุกชั้น)' },
                 { id: 'security', label: 'รปภ.', desc: 'การแต่งกาย' },
                 { id: 'fence', label: 'รั้วสถานี', desc: 'สภาพปกติ' },
-                { id: 'lighting', label: 'ระบบแสงสว่าง', desc: 'ภายในและภายนอกอาคาร' },
               ].map((point) => (
                 <div key={point.id} className="space-y-3">
                   <div className="flex justify-between items-center">
