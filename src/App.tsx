@@ -723,29 +723,35 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">จุดตรวจสอบมาตรฐาน (Fixed-Point)</p>
             <div className="space-y-6">
               {[
-                { id: 'yard', label: 'ลานไกไฟฟ้า', desc: 'การจัดการวัชพืช/หญ้า' },
-                { id: 'roof', label: 'หลังคาอาคาร', desc: 'สภาพความสะอาด/รอยรั่ว' },
-                { id: 'battery', label: 'แบตเตอรี่', desc: 'น้ำกลั่นระดับ Upper Level' },
-                { id: 'security', label: 'รปภ.', desc: 'การแต่งกาย' },
-                { id: 'fence', label: 'รั้วสถานี', desc: 'สภาพปกติ' },
+                { id: 'yard', label: 'ลานไก', desc: 'ถ่ายภาพรวม , ถ่ายมุมกว้าง ให้เห็นพื้นลานไกทั้งหมด' },
+                { id: 'roof', label: 'ดาดฟ้า', desc: 'ถ้าขึ้นได้, ถ่ายภาพรวม , ถ่ายมุมกว้าง ให้เห็นพื้น ท่อระบายน้ำต่างๆ' },
+                { id: 'battery', label: 'แบตเตอรี่', desc: 'ถ่ายภาพรวม 1 รูป , ถ่ายเจาะจงให้เห็นระดับสูง-ต่ำ น้ำกลั่น อย่างน้อย 1 รูป', mandatory: true },
+                { id: 'security', label: 'รปภ.', desc: 'ถ้าสฟ. มี รปภ. ให้ถ่ายรูปการแต่งกายของ รปภ. (ถ้าไม่มีให้ปิดหัวข้อไว้ ไม่ต้องถ่าย)' },
+                { id: 'fence', label: 'รั้วสถานี', desc: 'ถ่ายภาพ ให้เห็นรั้วทั้ง 4 ด้าน จะมีอย่างน้อย 4 รูป', mandatory: true },
               ].map((point) => {
-                const isEnabled = enabledCategories.includes(point.id);
+                const isMandatory = (point as any).mandatory;
+                const isEnabled = isMandatory || enabledCategories.includes(point.id);
                 return (
                   <div key={point.id} className={cn("space-y-3 p-4 rounded-2xl border transition-all", isEnabled ? "bg-white border-slate-100 shadow-sm" : "bg-slate-50 border-slate-200 opacity-60")}>
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-3">
-                        <button
-                          onClick={() => toggleCategory(point.id)}
-                          className={cn(
-                            "w-12 h-6 rounded-full relative transition-colors duration-200 focus:outline-none",
-                            isEnabled ? "bg-violet-600" : "bg-slate-300"
-                          )}
-                        >
-                          <div className={cn(
-                            "absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-200",
-                            isEnabled ? "left-7" : "left-1"
-                          )} />
-                        </button>
+                        {!isMandatory && (
+                          <button
+                            onClick={() => toggleCategory(point.id)}
+                            className={cn(
+                              "w-12 h-6 rounded-full relative transition-colors duration-200 focus:outline-none",
+                              isEnabled ? "bg-violet-600" : "bg-slate-300"
+                            )}
+                          >
+                            <div className={cn(
+                              "absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-200",
+                              isEnabled ? "left-7" : "left-1"
+                            )} />
+                          </button>
+                        )}
+                        {isMandatory && (
+                          <div className="w-2 h-2 rounded-full bg-violet-600 animate-pulse" />
+                        )}
                         <div>
                           <h4 className={cn("font-bold text-sm", isEnabled ? "text-slate-800" : "text-slate-400")}>{point.label}</h4>
                           <p className="text-[10px] text-slate-500">{point.desc}</p>
@@ -807,32 +813,19 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
             </div>
           </section>
 
-          <section className={cn("p-4 rounded-2xl border transition-all", enabledCategories.includes('checklist') ? "bg-white border-slate-100 shadow-sm" : "bg-slate-50 border-slate-200 opacity-60")}>
-            <div className="flex justify-between items-center mb-4">
+          <section className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+            <div className="flex justify-between items-center mb-1">
               <div className="flex items-center gap-3">
-                <button
-                  onClick={() => toggleCategory('checklist')}
-                  className={cn(
-                    "w-12 h-6 rounded-full relative transition-colors duration-200 focus:outline-none",
-                    enabledCategories.includes('checklist') ? "bg-violet-600" : "bg-slate-300"
-                  )}
-                >
-                  <div className={cn(
-                    "absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-200",
-                    enabledCategories.includes('checklist') ? "left-7" : "left-1"
-                  )} />
-                </button>
-                <p className={cn("text-xs font-bold uppercase tracking-wider", enabledCategories.includes('checklist') ? "text-slate-400" : "text-slate-300")}>กระดาษ Check List (A4)</p>
+                <div className="w-2 h-2 rounded-full bg-violet-600 animate-pulse" />
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400">กระดาษ Check List (A4)</p>
               </div>
-              {enabledCategories.includes('checklist') && (
-                <span className="text-xs font-bold text-violet-600 bg-violet-50 px-2 py-1 rounded-full">
-                  {checklists.length} แผ่น
-                </span>
-              )}
+              <span className="text-xs font-bold text-violet-600 bg-violet-50 px-2 py-1 rounded-full">
+                {checklists.length} แผ่น
+              </span>
             </div>
+            <p className="text-[10px] text-slate-500 mb-4">ถ่ายกระดาษ Check List ทุกหน้า</p>
             
-            {enabledCategories.includes('checklist') && (
-              <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-4 gap-2">
                 {checklists.map((file, i) => (
                   <div key={i} className="aspect-square bg-slate-200 rounded-lg overflow-hidden relative group">
                     <img src={URL.createObjectURL(file)} className="w-full h-full object-cover" />
@@ -856,7 +849,6 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                   />
                 </label>
               </div>
-            )}
           </section>
         </div>
 
