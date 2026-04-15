@@ -307,7 +307,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
     security: [],
     fence: [],
   });
-  const [enabledCategories, setEnabledCategories] = useState<string[]>(['battery', 'fence', 'checklist']);
+  const [enabledCategories, setEnabledCategories] = useState<string[]>(['yard', 'roof', 'battery', 'security', 'fence', 'checklist']);
 
   const toggleCategory = (id: string) => {
     setEnabledCategories(prev => 
@@ -719,34 +719,6 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
             </div>
           )}
 
-          <section className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">เลือกหัวข้อที่ต้องการถ่ายภาพ</p>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { id: 'yard', label: 'ลานไกไฟฟ้า' },
-                { id: 'roof', label: 'หลังคาอาคาร' },
-                { id: 'battery', label: 'แบตเตอรี่' },
-                { id: 'security', label: 'รปภ.' },
-                { id: 'fence', label: 'รั้วสถานี' },
-                { id: 'checklist', label: 'CHECK LIST' },
-              ].map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => toggleCategory(cat.id)}
-                  className={cn(
-                    "px-3 py-1.5 rounded-full text-[10px] font-bold transition-all border",
-                    enabledCategories.includes(cat.id)
-                      ? "bg-violet-600 border-violet-600 text-white shadow-md shadow-violet-100"
-                      : "bg-slate-50 border-slate-200 text-slate-400"
-                  )}
-                >
-                  {enabledCategories.includes(cat.id) ? '✓ ' : '+ '}
-                  {cat.label}
-                </button>
-              ))}
-            </div>
-          </section>
-
           <section>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">จุดตรวจสอบมาตรฐาน (Fixed-Point)</p>
             <div className="space-y-6">
@@ -756,72 +728,110 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                 { id: 'battery', label: 'แบตเตอรี่', desc: 'น้ำกลั่นระดับ Upper Level' },
                 { id: 'security', label: 'รปภ.', desc: 'การแต่งกาย' },
                 { id: 'fence', label: 'รั้วสถานี', desc: 'สภาพปกติ' },
-              ].filter(p => enabledCategories.includes(p.id)).map((point) => (
-                <div key={point.id} className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <h4 className="font-bold text-slate-800 text-sm">{point.label}</h4>
-                      <p className="text-[10px] text-slate-500">{point.desc}</p>
-                    </div>
-                    <label className="bg-violet-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 active:scale-95 transition-all cursor-pointer">
-                      <Camera size={14} /> ถ่ายภาพ
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        capture="environment" 
-                        className="hidden" 
-                        onChange={(e) => onFileChange(e, point.id)} 
-                      />
-                    </label>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 gap-4">
-                    {photos[point.id].map((item, i) => (
-                      <div key={i} className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm space-y-3">
-                        <div className="aspect-video bg-slate-200 rounded-xl overflow-hidden relative group">
-                          <img src={URL.createObjectURL(item.file)} className="w-full h-full object-cover" />
-                          <button 
-                            onClick={() => setPhotos(prev => ({
-                              ...prev,
-                              [point.id]: prev[point.id].filter((_, idx) => idx !== i)
-                            }))}
-                            className="absolute top-2 right-2 w-8 h-8 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-lg"
-                          >
-                            ×
-                          </button>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">คำอธิบายเพิ่มเติม (ถ้ามี)</p>
-                          <input 
-                            type="text"
-                            placeholder="ระบุรายละเอียดของภาพ..."
-                            value={item.comment}
-                            onChange={(e) => handleCommentChange(point.id, i, e.target.value)}
-                            className="w-full bg-slate-50 border-none rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-violet-500 outline-none"
-                          />
+              ].map((point) => {
+                const isEnabled = enabledCategories.includes(point.id);
+                return (
+                  <div key={point.id} className={cn("space-y-3 p-4 rounded-2xl border transition-all", isEnabled ? "bg-white border-slate-100 shadow-sm" : "bg-slate-50 border-slate-200 opacity-60")}>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => toggleCategory(point.id)}
+                          className={cn(
+                            "w-12 h-6 rounded-full relative transition-colors duration-200 focus:outline-none",
+                            isEnabled ? "bg-violet-600" : "bg-slate-300"
+                          )}
+                        >
+                          <div className={cn(
+                            "absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-200",
+                            isEnabled ? "left-7" : "left-1"
+                          )} />
+                        </button>
+                        <div>
+                          <h4 className={cn("font-bold text-sm", isEnabled ? "text-slate-800" : "text-slate-400")}>{point.label}</h4>
+                          <p className="text-[10px] text-slate-500">{point.desc}</p>
                         </div>
                       </div>
-                    ))}
-                    {photos[point.id].length === 0 && (
-                      <div className="py-8 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center text-slate-400">
-                        <Camera size={24} className="mb-2 opacity-30" />
-                        <span className="text-xs font-bold">ยังไม่มีรูปภาพ</span>
+                      {isEnabled && (
+                        <label className="bg-violet-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 active:scale-95 transition-all cursor-pointer shadow-md shadow-violet-100">
+                          <Camera size={14} /> ถ่ายภาพ
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            capture="environment" 
+                            className="hidden" 
+                            onChange={(e) => onFileChange(e, point.id)} 
+                          />
+                        </label>
+                      )}
+                    </div>
+                    
+                    {isEnabled && (
+                      <div className="grid grid-cols-1 gap-4">
+                        {photos[point.id].map((item, i) => (
+                          <div key={i} className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+                            <div className="aspect-video bg-slate-200 rounded-xl overflow-hidden relative group">
+                              <img src={URL.createObjectURL(item.file)} className="w-full h-full object-cover" />
+                              <button 
+                                onClick={() => setPhotos(prev => ({
+                                  ...prev,
+                                  [point.id]: prev[point.id].filter((_, idx) => idx !== i)
+                                }))}
+                                className="absolute top-2 right-2 w-8 h-8 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-lg"
+                              >
+                                ×
+                              </button>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">คำอธิบายเพิ่มเติม (ถ้ามี)</p>
+                              <input 
+                                type="text"
+                                placeholder="ระบุรายละเอียดของภาพ..."
+                                value={item.comment}
+                                onChange={(e) => handleCommentChange(point.id, i, e.target.value)}
+                                className="w-full bg-slate-50 border-none rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-violet-500 outline-none"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                        {photos[point.id].length === 0 && (
+                          <div className="py-8 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center text-slate-400">
+                            <Camera size={24} className="mb-2 opacity-30" />
+                            <span className="text-xs font-bold">ยังไม่มีรูปภาพ</span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
 
-          {enabledCategories.includes('checklist') && (
-            <section>
-              <div className="flex justify-between items-center mb-4">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">กระดาษ Check List (A4)</p>
+          <section className={cn("p-4 rounded-2xl border transition-all", enabledCategories.includes('checklist') ? "bg-white border-slate-100 shadow-sm" : "bg-slate-50 border-slate-200 opacity-60")}>
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => toggleCategory('checklist')}
+                  className={cn(
+                    "w-12 h-6 rounded-full relative transition-colors duration-200 focus:outline-none",
+                    enabledCategories.includes('checklist') ? "bg-violet-600" : "bg-slate-300"
+                  )}
+                >
+                  <div className={cn(
+                    "absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-200",
+                    enabledCategories.includes('checklist') ? "left-7" : "left-1"
+                  )} />
+                </button>
+                <p className={cn("text-xs font-bold uppercase tracking-wider", enabledCategories.includes('checklist') ? "text-slate-400" : "text-slate-300")}>กระดาษ Check List (A4)</p>
+              </div>
+              {enabledCategories.includes('checklist') && (
                 <span className="text-xs font-bold text-violet-600 bg-violet-50 px-2 py-1 rounded-full">
                   {checklists.length} แผ่น
                 </span>
-              </div>
+              )}
+            </div>
+            
+            {enabledCategories.includes('checklist') && (
               <div className="grid grid-cols-4 gap-2">
                 {checklists.map((file, i) => (
                   <div key={i} className="aspect-square bg-slate-200 rounded-lg overflow-hidden relative group">
@@ -846,8 +856,8 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                   />
                 </label>
               </div>
-            </section>
-          )}
+            )}
+          </section>
         </div>
 
         <div className="fixed bottom-0 left-0 right-0 p-6 bg-white border-t border-slate-100 shadow-2xl">
