@@ -1194,7 +1194,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
     }
   };
 
-  const REQUIRED_CATEGORIES = ['building', 'yard', 'roof', 'annunciation', 'battery', 'grounding', 'security', 'fence', 'lighting', 'checklist'];
+  const REQUIRED_CATEGORIES = ['fence', 'battery', 'checklist'];
 
   const substationCompletionMap = new Map<string, Set<string>>();
   stats.recent.forEach(log => {
@@ -1430,26 +1430,23 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                         <div className="flex items-center gap-2">
                           <span className={cn(
                             "inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-1 rounded-full",
-                            (log.categories?.length || 0) >= REQUIRED_CATEGORIES.length 
+                            REQUIRED_CATEGORIES.every(cat => log.categories?.includes(cat))
                               ? "bg-emerald-50 text-emerald-600" 
                               : "bg-amber-50 text-amber-600"
                           )}>
-                            <CheckCircle2 size={12} /> {(log.categories?.length || 0) >= REQUIRED_CATEGORIES.length ? 'เรียบร้อย' : 'กำลังดำเนินการ'}
+                            <CheckCircle2 size={12} /> {REQUIRED_CATEGORIES.every(cat => log.categories?.includes(cat)) ? 'เรียบร้อย' : 'กำลังดำเนินการ'}
                           </span>
                           <span className="text-[10px] font-bold text-slate-400">
-                            ({log.categories?.length || 0}/{REQUIRED_CATEGORIES.length})
+                            ({REQUIRED_CATEGORIES.filter(cat => log.categories?.includes(cat)).length}/{REQUIRED_CATEGORIES.length})
                           </span>
                         </div>
-                        {log.categories && log.categories.length < REQUIRED_CATEGORIES.length && (
+                        {log.categories && !REQUIRED_CATEGORIES.every(cat => log.categories.includes(cat)) && (
                           <div className="flex flex-wrap gap-1 max-w-[150px]">
-                            {REQUIRED_CATEGORIES.filter(cat => !log.categories.includes(cat)).slice(0, 2).map(cat => (
+                            {REQUIRED_CATEGORIES.filter(cat => !log.categories.includes(cat)).map(cat => (
                               <span key={cat} className="text-[7px] text-slate-400 bg-slate-100 px-1 rounded">
                                 {CATEGORY_LABELS[cat] || cat}
                               </span>
                             ))}
-                            {REQUIRED_CATEGORIES.length - log.categories.length > 2 && (
-                              <span className="text-[7px] text-slate-400 italic">...</span>
-                            )}
                           </div>
                         )}
                       </div>
