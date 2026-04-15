@@ -723,11 +723,11 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">จุดตรวจสอบมาตรฐาน (Fixed-Point)</p>
             <div className="space-y-6">
               {[
+                { id: 'fence', label: 'รั้วสถานี', desc: 'ถ่ายภาพ ให้เห็นรั้วทั้ง 4 ด้าน จะมีอย่างน้อย 4 รูป', mandatory: true },
+                { id: 'battery', label: 'แบตเตอรี่', desc: 'ถ่ายภาพรวม 1 รูป , ถ่ายเจาะจงให้เห็นระดับสูง-ต่ำ น้ำกลั่น อย่างน้อย 1 รูป', mandatory: true },
                 { id: 'yard', label: 'ลานไก', desc: 'ถ่ายภาพรวม , ถ่ายมุมกว้าง ให้เห็นพื้นลานไกทั้งหมด' },
                 { id: 'roof', label: 'ดาดฟ้า', desc: 'ถ้าขึ้นได้, ถ่ายภาพรวม , ถ่ายมุมกว้าง ให้เห็นพื้น ท่อระบายน้ำต่างๆ' },
-                { id: 'battery', label: 'แบตเตอรี่', desc: 'ถ่ายภาพรวม 1 รูป , ถ่ายเจาะจงให้เห็นระดับสูง-ต่ำ น้ำกลั่น อย่างน้อย 1 รูป', mandatory: true },
                 { id: 'security', label: 'รปภ.', desc: 'ถ้าสฟ. มี รปภ. ให้ถ่ายรูปการแต่งกายของ รปภ. (ถ้าไม่มีให้ปิดหัวข้อไว้ ไม่ต้องถ่าย)' },
-                { id: 'fence', label: 'รั้วสถานี', desc: 'ถ่ายภาพ ให้เห็นรั้วทั้ง 4 ด้าน จะมีอย่างน้อย 4 รูป', mandatory: true },
               ].map((point) => {
                 const isMandatory = (point as any).mandatory;
                 const isEnabled = isMandatory || enabledCategories.includes(point.id);
