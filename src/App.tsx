@@ -307,6 +307,13 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
     security: [],
     fence: [],
   });
+  const [enabledCategories, setEnabledCategories] = useState<string[]>(['battery', 'fence', 'checklist']);
+
+  const toggleCategory = (id: string) => {
+    setEnabledCategories(prev => 
+      prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
+    );
+  };
   const [checklists, setChecklists] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const isSubmitting = useRef(false);
@@ -711,6 +718,35 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
               </button>
             </div>
           )}
+
+          <section className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">เลือกหัวข้อที่ต้องการถ่ายภาพ</p>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { id: 'yard', label: 'ลานไกไฟฟ้า' },
+                { id: 'roof', label: 'หลังคาอาคาร' },
+                { id: 'battery', label: 'แบตเตอรี่' },
+                { id: 'security', label: 'รปภ.' },
+                { id: 'fence', label: 'รั้วสถานี' },
+                { id: 'checklist', label: 'CHECK LIST' },
+              ].map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => toggleCategory(cat.id)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-full text-[10px] font-bold transition-all border",
+                    enabledCategories.includes(cat.id)
+                      ? "bg-violet-600 border-violet-600 text-white shadow-md shadow-violet-100"
+                      : "bg-slate-50 border-slate-200 text-slate-400"
+                  )}
+                >
+                  {enabledCategories.includes(cat.id) ? '✓ ' : '+ '}
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+          </section>
+
           <section>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">จุดตรวจสอบมาตรฐาน (Fixed-Point)</p>
             <div className="space-y-6">
@@ -720,7 +756,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                 { id: 'battery', label: 'แบตเตอรี่', desc: 'น้ำกลั่นระดับ Upper Level' },
                 { id: 'security', label: 'รปภ.', desc: 'การแต่งกาย' },
                 { id: 'fence', label: 'รั้วสถานี', desc: 'สภาพปกติ' },
-              ].map((point) => (
+              ].filter(p => enabledCategories.includes(p.id)).map((point) => (
                 <div key={point.id} className="space-y-3">
                   <div className="flex justify-between items-center">
                     <div>
@@ -778,38 +814,40 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
             </div>
           </section>
 
-          <section>
-            <div className="flex justify-between items-center mb-4">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">กระดาษ Check List (A4)</p>
-              <span className="text-xs font-bold text-violet-600 bg-violet-50 px-2 py-1 rounded-full">
-                {checklists.length} แผ่น
-              </span>
-            </div>
-            <div className="grid grid-cols-4 gap-2">
-              {checklists.map((file, i) => (
-                <div key={i} className="aspect-square bg-slate-200 rounded-lg overflow-hidden relative group">
-                  <img src={URL.createObjectURL(file)} className="w-full h-full object-cover" />
-                  <button 
-                    onClick={() => setChecklists(prev => prev.filter((_, idx) => idx !== i))}
-                    className="absolute top-0.5 right-0.5 w-5 h-5 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-lg text-xs"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-              <label className="aspect-square border-2 border-dashed border-slate-300 rounded-lg flex flex-col items-center justify-center text-slate-400 hover:border-violet-500 hover:text-violet-500 transition-all cursor-pointer">
-                <Camera size={20} />
-                <span className="text-[8px] font-bold mt-1">ถ่ายภาพ</span>
-                <input 
-                  type="file" 
-                  accept="image/*" 
-                  capture="environment" 
-                  className="hidden" 
-                  onChange={(e) => onFileChange(e, 'checklist')} 
-                />
-              </label>
-            </div>
-          </section>
+          {enabledCategories.includes('checklist') && (
+            <section>
+              <div className="flex justify-between items-center mb-4">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">กระดาษ Check List (A4)</p>
+                <span className="text-xs font-bold text-violet-600 bg-violet-50 px-2 py-1 rounded-full">
+                  {checklists.length} แผ่น
+                </span>
+              </div>
+              <div className="grid grid-cols-4 gap-2">
+                {checklists.map((file, i) => (
+                  <div key={i} className="aspect-square bg-slate-200 rounded-lg overflow-hidden relative group">
+                    <img src={URL.createObjectURL(file)} className="w-full h-full object-cover" />
+                    <button 
+                      onClick={() => setChecklists(prev => prev.filter((_, idx) => idx !== i))}
+                      className="absolute top-0.5 right-0.5 w-5 h-5 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-lg text-xs"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                <label className="aspect-square border-2 border-dashed border-slate-300 rounded-lg flex flex-col items-center justify-center text-slate-400 hover:border-violet-500 hover:text-violet-500 transition-all cursor-pointer">
+                  <Camera size={20} />
+                  <span className="text-[8px] font-bold mt-1">ถ่ายภาพ</span>
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    capture="environment" 
+                    className="hidden" 
+                    onChange={(e) => onFileChange(e, 'checklist')} 
+                  />
+                </label>
+              </div>
+            </section>
+          )}
         </div>
 
         <div className="fixed bottom-0 left-0 right-0 p-6 bg-white border-t border-slate-100 shadow-2xl">
