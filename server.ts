@@ -1092,8 +1092,8 @@ app.get("/api/dashboard-stats", async (req, res) => {
     filteredLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     // Count unique substations that are "Complete"
-    // A substation is complete if it has all required categories covered in the month
-    const REQUIRED_CATEGORIES = ['building', 'yard', 'roof', 'annunciation', 'battery', 'grounding', 'security', 'fence', 'lighting', 'checklist'];
+    // A substation is complete if it has the 3 mandatory categories covered in the month
+    const MANDATORY_CATEGORIES = ['fence', 'battery', 'checklist'];
     
     const substationCompletion = new Map<string, Set<string>>();
     filteredLogs.forEach(log => {
@@ -1102,7 +1102,7 @@ app.get("/api/dashboard-stats", async (req, res) => {
         substationCompletion.set(name, new Set());
       }
       (log.categories || []).forEach((cat: string) => {
-        if (REQUIRED_CATEGORIES.includes(cat)) {
+        if (MANDATORY_CATEGORIES.includes(cat)) {
           substationCompletion.get(name)?.add(cat);
         }
       });
@@ -1110,7 +1110,7 @@ app.get("/api/dashboard-stats", async (req, res) => {
 
     let completedCount = 0;
     substationCompletion.forEach((cats) => {
-      if (cats.size >= REQUIRED_CATEGORIES.length) {
+      if (cats.size >= MANDATORY_CATEGORIES.length) {
         completedCount++;
       }
     });

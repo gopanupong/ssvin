@@ -1298,7 +1298,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-violet-100 text-xs font-bold uppercase tracking-wider mb-1">ตรวจสอบแล้ว ({months[selectedMonth].label})</p>
-                  <h3 className="text-4xl font-bold">{stats.total} <span className="text-lg font-normal opacity-70">สถานี</span></h3>
+                  <h3 className="text-4xl font-bold">{inspectedSubstations.length} <span className="text-lg font-normal opacity-70">สถานี</span></h3>
                   <p className="text-[10px] text-violet-100 mt-1 font-bold">รวม {stats.totalSubmissions} รายการส่ง</p>
                 </div>
                 <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/50 group-hover:bg-white/20 group-hover:text-white transition-colors">
@@ -1313,7 +1313,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">รอดำเนินการ</p>
-                  <h3 className="text-4xl font-bold text-slate-800">{SUBSTATIONS.length - stats.total} <span className="text-lg font-normal opacity-40">สถานี</span></h3>
+                  <h3 className="text-4xl font-bold text-slate-800">{pendingSubstations.length} <span className="text-lg font-normal opacity-40">สถานี</span></h3>
                 </div>
                 <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 group-hover:bg-violet-50 group-hover:text-violet-500 transition-colors">
                   <ChevronRight size={18} />
@@ -1326,7 +1326,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
             <Card>
               <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">ความครอบคลุม</p>
               <h3 className="text-4xl font-bold text-slate-800">
-                {((stats.total / SUBSTATIONS.length) * 100).toFixed(1)}%
+                {((inspectedSubstations.length / SUBSTATIONS.length) * 100).toFixed(1)}%
               </h3>
               <p className="text-[10px] text-slate-400 mt-1 font-bold">จากทั้งหมด {SUBSTATIONS.length} สถานี</p>
             </Card>
