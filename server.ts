@@ -71,6 +71,30 @@ async function initDb() {
         PRIMARY KEY (substation_name, month, year)
       );
     `);
+    
+    // Add columns dynamically for Health Index Weights & N/A
+    const columns = [
+      "battery_score INT DEFAULT 100",
+      "battery_na BOOLEAN DEFAULT FALSE",
+      "yard_score INT DEFAULT 100",
+      "yard_na BOOLEAN DEFAULT FALSE",
+      "checklist_score INT DEFAULT 100",
+      "checklist_na BOOLEAN DEFAULT FALSE",
+      "roof_score INT DEFAULT 100",
+      "roof_na BOOLEAN DEFAULT FALSE",
+      "fence_score INT DEFAULT 100",
+      "fence_na BOOLEAN DEFAULT FALSE",
+      "security_score INT DEFAULT 100",
+      "security_na BOOLEAN DEFAULT FALSE"
+    ];
+    for (const col of columns) {
+      try {
+        await pool.query(`ALTER TABLE health_index_logs ADD COLUMN IF NOT EXISTS ${col}`);
+      } catch (colErr) {
+        console.warn(`Could not add column ${col}:`, colErr);
+      }
+    }
+
     console.log("PostgreSQL initialized.");
   } catch (err) {
     console.error("Failed to initialize database:", err);
@@ -1458,6 +1482,66 @@ app.get("/api/health-index", async (req, res) => {
   } catch (err) {
     console.error("Failed to fetch health index:", err);
     res.status(500).json({ error: "Failed to fetch health index" });
+  }
+});
+
+app.post("/api/save-health-audit", async (req: any, res: any) => {
+  const { 
+    substationName, month, year, 
+    battery_score, battery_na,
+    yard_score, yard_na,
+    checklist_score, checklist_na,
+    roof_score, roof_na,
+    fence_score, fence_na,
+    security_score, security_na,
+    summary, status 
+  } = req.body;
+
+  const pool = getDbPool();
+  if (!pool) return res.status(500).json({ error: "No database pool available" });
+
+  try {
+    const q = `
+      INSERT INTO health_index_logs (
+        substation_name, month, year, status, findings, summary, analyzed_at,
+        battery_score, battery_na,
+        yard_score, yard_na,
+        checklist_score, checklist_na,
+        roof_score, roof_na,
+        fence_score, fence_na,
+        security_score, security_na
+      ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      ON CONFLICT (substation_name, month, year)
+      DO UPDATE SET
+        status = EXCLUDED.status,
+        summary = EXCLUDED.summary,
+        analyzed_at = CURRENT_TIMESTAMP,
+        battery_score = EXCLUDED.battery_score,
+        battery_na = EXCLUDED.battery_na,
+        yard_score = EXCLUDED.yard_score,
+        yard_na = EXCLUDED.yard_na,
+        checklist_score = EXCLUDED.checklist_score,
+        checklist_na = EXCLUDED.checklist_na,
+        roof_score = EXCLUDED.roof_score,
+        roof_na = EXCLUDED.roof_na,
+        fence_score = EXCLUDED.fence_score,
+        fence_na = EXCLUDED.fence_na,
+        security_score = EXCLUDED.security_score,
+        security_na = EXCLUDED.security_na
+    `;
+    await pool.query(q, [
+      substationName, parseInt(month), parseInt(year), status || 'Green', [], summary || '',
+      battery_score !== undefined ? parseInt(battery_score) : 100, !!battery_na,
+      yard_score !== undefined ? parseInt(yard_score) : 100, !!yard_na,
+      checklist_score !== undefined ? parseInt(checklist_score) : 100, !!checklist_na,
+      roof_score !== undefined ? parseInt(roof_score) : 100, !!roof_na,
+      fence_score !== undefined ? parseInt(fence_score) : 100, !!fence_na,
+      security_score !== undefined ? parseInt(security_score) : 100, !!security_na
+    ]);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("Failed to save health audit:", err);
+    res.status(500).json({ error: "Failed to save health audit: " + err.message });
   }
 });
 

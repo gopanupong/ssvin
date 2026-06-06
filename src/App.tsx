@@ -15,7 +15,12 @@ import {
   FileText,
   Plus,
   MonitorOff,
-  Clock
+  Clock,
+  Search,
+  Sliders,
+  Info,
+  Shield,
+  Wrench
 } from 'lucide-react';
 import { cn, SUBSTATIONS, InspectionLog } from './constants';
 import { format } from 'date-fns';
@@ -43,10 +48,11 @@ const Button = ({ className, variant = 'primary', ...props }: React.ButtonHTMLAt
   );
 };
 
-const Card = ({ children, className, onClick }: { children: React.ReactNode; className?: string; onClick?: () => void }) => (
+const Card = ({ children, className, onClick, ...props }: { children: React.ReactNode; className?: string; onClick?: () => void; [key: string]: any }) => (
   <div 
     onClick={onClick}
     className={cn('bg-white rounded-2xl shadow-sm border border-slate-100 p-6', className)}
+    {...props}
   >
     {children}
   </div>
@@ -957,6 +963,11 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   const stopBatchRef = useRef(false);
   const [currentlyAnalyzingId, setCurrentlyAnalyzingId] = useState<string | null>(null);
   const [analysisSummary, setAnalysisSummary] = useState({ total: 0, clean: 0, issues: 0, weeds: 0, birdDroppings: 0 });
+  
+  const [selectedSubForAudit, setSelectedSubForAudit] = useState<any | null>(null);
+  const [isSavingAudit, setIsSavingAudit] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeGradeFilter, setActiveGradeFilter] = useState<string | null>(null);
 
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [driveStatus, setDriveStatus] = useState<{ connected: boolean; configured: boolean } | null>(null);
@@ -1192,6 +1203,98 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
     } finally {
       setAnalyzing(null);
     }
+  };
+
+  const handleSaveAudit = async (auditData: any) => {
+    setIsSavingAudit(true);
+    try {
+      const response = await fetch('/api/save-health-audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          substationName: auditData.substation_name,
+          month: selectedMonth + 1,
+          year: selectedYear,
+          battery_score: auditData.battery_score,
+          battery_na: auditData.battery_na,
+          yard_score: auditData.yard_score,
+          yard_na: auditData.yard_na,
+          checklist_score: auditData.checklist_score,
+          checklist_na: auditData.checklist_na,
+          roof_score: auditData.roof_score,
+          roof_na: auditData.roof_na,
+          fence_score: auditData.fence_score,
+          fence_na: auditData.fence_na,
+          security_score: auditData.security_score,
+          security_na: auditData.security_na,
+          summary: auditData.summary,
+          status: auditData.status
+        })
+      });
+      const res = await response.json();
+      if (res.success) {
+        // Refresh the local healthIndex from DB!
+        fetchHealthIndex();
+        setSelectedSubForAudit(null);
+      } else {
+        alert("ไม่สามารถบันทึกได้: " + (res.error || "ข้อผิดพลาดที่ไม่รู้จัก"));
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์");
+    } finally {
+      setIsSavingAudit(false);
+    }
+  };
+
+  const calculateHIForSubstation = (healthRow: any) => {
+    if (!healthRow) return { score: 100, isEvaluated: false, naCount: 0, grade: 'ดีมาก', gradeColor: 'text-emerald-600 bg-emerald-50 border-emerald-100' };
+
+    let totalWeightApplicable = 0;
+    let totalScoreWeight = 0;
+
+    const categories = [
+      { score: healthRow.battery_score, na: healthRow.battery_na, weight: 0.25 },
+      { score: healthRow.yard_score, na: healthRow.yard_na, weight: 0.20 },
+      { score: healthRow.checklist_score, na: healthRow.checklist_na, weight: 0.15 },
+      { score: healthRow.roof_score, na: healthRow.roof_na, weight: 0.15 },
+      { score: healthRow.fence_score, na: healthRow.fence_na, weight: 0.15 },
+      { score: healthRow.security_score, na: healthRow.security_na, weight: 0.10 }
+    ];
+
+    let naCount = 0;
+    categories.forEach(cat => {
+      const isNa = cat.na === true;
+      const scoreVal = cat.score !== undefined && cat.score !== null ? cat.score : 100;
+
+      if (!isNa) {
+        totalWeightApplicable += cat.weight;
+        totalScoreWeight += (scoreVal * cat.weight);
+      } else {
+        naCount++;
+      }
+    });
+
+    if (totalWeightApplicable === 0) {
+      return { score: 0, isEvaluated: true, naCount, grade: 'ต้องปรับปรุง', gradeColor: 'text-rose-600 bg-rose-50 border-rose-100' };
+    }
+
+    const score = Math.round((totalScoreWeight / totalWeightApplicable) * 10) / 10;
+    
+    let grade = 'ต้องปรับปรุง';
+    let gradeColor = 'text-rose-600 bg-rose-50 border-rose-100';
+    if (score >= 90) {
+      grade = 'ดีมาก';
+      gradeColor = 'text-emerald-600 bg-emerald-50 border-emerald-100';
+    } else if (score >= 80) {
+      grade = 'ดี';
+      gradeColor = 'text-teal-600 bg-teal-50 border-teal-100';
+    } else if (score >= 70) {
+      grade = 'ปานกลาง';
+      gradeColor = 'text-amber-600 bg-amber-50 border-amber-100';
+    }
+
+    return { score, isEvaluated: true, naCount, grade, gradeColor };
   };
 
   const REQUIRED_CATEGORIES = ['fence', 'battery', 'checklist'];
@@ -1475,102 +1578,370 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
           </div>
         </Card>
           </>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-            {SUBSTATIONS.map(sub => {
-              const health = healthIndex.find(h => h.substation_name === sub.name);
-              const statusColor = health?.status === 'Red' ? 'bg-rose-500' : (health?.status === 'Green' ? 'bg-emerald-500' : 'bg-slate-200');
-              const isAnalyzing = analyzing === sub.name;
+        ) : (() => {
+          const evaluatedRows = SUBSTATIONS.map(sub => {
+            const row = healthIndex.find(h => h.substation_name === sub.name);
+            return { sub, row, calculation: calculateHIForSubstation(row) };
+          });
+          
+          const auditedRows = evaluatedRows.filter(item => item.row !== undefined);
+          const totalAudited = auditedRows.length;
+          const averageHI = totalAudited > 0 
+            ? Math.round((auditedRows.reduce((acc, curr) => acc + curr.calculation.score, 0) / totalAudited) * 10) / 10 
+            : 0;
+          
+          const countExcellent = evaluatedRows.filter(r => r.row && r.calculation.score >= 90).length;
+          const countGood = evaluatedRows.filter(r => r.row && r.calculation.score >= 80 && r.calculation.score < 90).length;
+          const countFair = evaluatedRows.filter(r => r.row && r.calculation.score >= 70 && r.calculation.score < 80).length;
+          const countPoor = evaluatedRows.filter(r => r.row && r.calculation.score < 70).length;
+          const unAuditedCount = SUBSTATIONS.length - totalAudited;
 
-              return (
-                <div key={sub.id}>
-                  <Card className="relative overflow-hidden group hover:shadow-md transition-all h-full">
-                    <div className={cn("absolute top-0 right-0 w-2 h-full transition-colors", statusColor)} />
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 group-hover:text-violet-500 transition-colors">
-                        <MonitorOff size={20} />
-                      </div>
-                      {health && (
-                        <span className={cn(
-                          "text-[10px] font-bold px-2 py-1 rounded-full",
-                          health.status === 'Red' ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-600"
-                        )}>
-                          {health.status === 'Red' ? 'พบปัญหา' : 'ปกติ'}
-                        </span>
-                      )}
+          return (
+            <div className="space-y-6">
+              {/* KPI Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                {/* Average Health Index Speedometer/Card */}
+                <Card className="bg-slate-900 text-white border-none shadow-xl flex flex-col justify-between p-4 col-span-1 sm:col-span-2">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ดัชนีสุขภาพเฉลี่ย (Average HI)</span>
+                      <h3 className="text-4xl font-extrabold mt-1 text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-emerald-400">
+                        {totalAudited > 0 ? `${averageHI}%` : 'N/A'}
+                      </h3>
                     </div>
-                    
-                    <h3 className="font-bold text-slate-800 text-sm mb-1">{sub.name}</h3>
-                    <p className="text-[10px] text-slate-400 font-medium mb-4">Health Index ด้านความสะอาด</p>
+                    <div className="p-2 bg-slate-800 rounded-xl text-teal-400">
+                      <Sliders size={20} />
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-teal-500 to-emerald-400 transition-all duration-500" 
+                        style={{ width: `${totalAudited > 0 ? averageHI : 0}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-2 font-medium">
+                      ประเมินแล้ว: <span className="text-white font-bold">{totalAudited}</span> จาก {SUBSTATIONS.length} สถานี ทั้งหมด ({months[selectedMonth].label})
+                    </p>
+                  </div>
+                </Card>
 
-                    {health ? (
-                      <div className="space-y-3">
-                        <div className="flex flex-wrap gap-1">
-                          {health.findings && health.findings.length > 0 ? (
-                            health.findings.map((f: string) => (
-                              <span key={f} className="text-[10px] bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full font-bold">
-                                {f === 'Weed' ? 'หญ้าขึ้นสูง' : (f === 'Bird Droppings' ? 'คราบขี้นก' : f)}
+                {/* Excellent Rating Card */}
+                <button 
+                  onClick={() => setActiveGradeFilter(activeGradeFilter === 'Excellent' ? null : 'Excellent')}
+                  className={cn(
+                    "text-left p-4 rounded-2xl border transition-all flex flex-col justify-between cursor-pointer",
+                    activeGradeFilter === 'Excellent' 
+                      ? "bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-100" 
+                      : "bg-white text-slate-800 border-slate-100 hover:border-slate-200"
+                  )}
+                >
+                  <div>
+                    <span className={cn("text-[9px] font-bold uppercase tracking-wider", activeGradeFilter === 'Excellent' ? "text-emerald-100" : "text-slate-400")}>
+                      ดีมาก (≥ 90%)
+                    </span>
+                    <h4 className="text-2xl font-extrabold mt-1">{countExcellent}</h4>
+                  </div>
+                  <span className={cn("text-[9px] font-bold block mt-3", activeGradeFilter === 'Excellent' ? "text-emerald-100" : "text-slate-400")}>
+                    {activeGradeFilter === 'Excellent' ? '• กำลังกรองข้อมูล' : 'คลิกเพื่อกรอง'}
+                  </span>
+                </button>
+
+                {/* Good Rating Card */}
+                <button 
+                  onClick={() => setActiveGradeFilter(activeGradeFilter === 'Good' ? null : 'Good')}
+                  className={cn(
+                    "text-left p-4 rounded-2xl border transition-all flex flex-col justify-between cursor-pointer",
+                    activeGradeFilter === 'Good' 
+                      ? "bg-teal-500 text-white border-teal-500 shadow-lg shadow-teal-100" 
+                      : "bg-white text-slate-800 border-slate-100 hover:border-slate-200"
+                  )}
+                >
+                  <div>
+                    <span className={cn("text-[9px] font-bold uppercase tracking-wider", activeGradeFilter === 'Good' ? "text-teal-100" : "text-slate-400")}>
+                      ดี (80% - 89%)
+                    </span>
+                    <h4 className="text-2xl font-extrabold mt-1">{countGood}</h4>
+                  </div>
+                  <span className={cn("text-[9px] font-bold block mt-3", activeGradeFilter === 'Good' ? "text-teal-100" : "text-slate-400")}>
+                    {activeGradeFilter === 'Good' ? '• กำลังกรองข้อมูล' : 'คลิกเพื่อกรอง'}
+                  </span>
+                </button>
+
+                {/* Fair Rating Card */}
+                <button 
+                  onClick={() => setActiveGradeFilter(activeGradeFilter === 'Fair' ? null : 'Fair')}
+                  className={cn(
+                    "text-left p-4 rounded-2xl border transition-all flex flex-col justify-between cursor-pointer",
+                    activeGradeFilter === 'Fair' 
+                      ? "bg-amber-50 text-amber-700 border-amber-300 shadow-lg shadow-amber-100" 
+                      : "bg-white text-slate-800 border-slate-100 hover:border-slate-200"
+                  )}
+                >
+                  <div>
+                    <span className={cn("text-[9px] font-bold uppercase tracking-wider", activeGradeFilter === 'Fair' ? "text-amber-800/80" : "text-slate-400")}>
+                      ปานกลาง (70% - 79%)
+                    </span>
+                    <h4 className="text-2xl font-extrabold mt-1 text-amber-700">{countFair}</h4>
+                  </div>
+                  <span className={cn("text-[9px] font-bold block mt-3", activeGradeFilter === 'Fair' ? "text-amber-800/80" : "text-slate-400")}>
+                    {activeGradeFilter === 'Fair' ? '• กำลังกรองข้อมูล' : 'คลิกเพื่อกรอง'}
+                  </span>
+                </button>
+
+                {/* Need Improvement Card */}
+                <button 
+                  onClick={() => setActiveGradeFilter(activeGradeFilter === 'Poor' ? null : 'Poor')}
+                  className={cn(
+                    "text-left p-4 rounded-2xl border transition-all flex flex-col justify-between cursor-pointer",
+                    activeGradeFilter === 'Poor' 
+                      ? "bg-rose-500 text-white border-rose-500 shadow-lg shadow-rose-100" 
+                      : "bg-white text-slate-800 border-slate-100 hover:border-slate-200"
+                  )}
+                >
+                  <div>
+                    <span className={cn("text-[9px] font-bold uppercase tracking-wider", activeGradeFilter === 'Poor' ? "text-rose-100" : "text-slate-400")}>
+                      ต้องปรับปรุง (&lt; 70%)
+                    </span>
+                    <h4 className="text-2xl font-extrabold mt-1">{countPoor}</h4>
+                  </div>
+                  <span className={cn("text-[9px] font-bold block mt-3", activeGradeFilter === 'Poor' ? "text-rose-100" : "text-slate-400")}>
+                    {activeGradeFilter === 'Poor' ? '• กำลังกรองข้อมูล' : 'คลิกเพื่อกรอง'}
+                  </span>
+                </button>
+              </div>
+
+              {/* Formula & Explanation Card */}
+              <Card className="bg-slate-50 border-slate-250 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-violet-100 text-violet-600 rounded-xl mt-0.5">
+                    <Info size={16} />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-slate-800">สูตรคำนวณดัชนีสุขภาพปรับตามระดับอุปกรณ์จริง (Dynamic Weighting and Normalization)</h4>
+                    <p className="text-[10px] text-slate-500 leading-relaxed">
+                      หากสถานีใดไม่มีอุปกรณ์ประเภทใด (เช่น ชานดาดฟ้า หรือทีม รปภ. ประจำการ) ให้ตั้งค่าอุปกรณ์ชิ้นนั้นเป็น <strong>N/A</strong> 
+                      ระบบจะทำการปรับฐานน้ำหนักคะแนนรวมเทียบเปรียบเฉลี่ยใหม่ตามสูตรประเมินเพื่อให้แน่ใจว่าไม่มีการหักคะแนนส่วนที่ขาดตกบกพร่องตามจริงอย่างยุติธรรม:
+                    </p>
+                    <p className="text-[11px] font-bold font-mono text-violet-700 bg-white border border-slate-200 p-2 rounded-lg inline-block mt-2">
+                      ดัชนีสุขภาพ (HI %): (Σ (คะแนนส่วนประกอบ × น้ำหนักสัดส่วน) / Σ (น้ำหนักที่ใช้งานจริง)) × 100
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 mt-2 pt-1 border-t border-slate-200/40">
+                      <div className="text-[9px] text-slate-500"><strong className="text-slate-700">🔋 แบตเตอรี่:</strong> 25%</div>
+                      <div className="text-[9px] text-slate-500"><strong className="text-slate-700">⚡ ลานไก:</strong> 20%</div>
+                      <div className="text-[9px] text-slate-500"><strong className="text-slate-700">📝 Checklist:</strong> 15%</div>
+                      <div className="text-[9px] text-slate-500"><strong className="text-slate-700">🏢 ดาดฟ้า:</strong> 15%</div>
+                      <div className="text-[9px] text-slate-500"><strong className="text-slate-700">🚧 รั้วรอบ:</strong> 15%</div>
+                      <div className="text-[9px] text-slate-500"><strong className="text-slate-700">👮 รปภ.:</strong> 10%</div>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              {/* Substation Search & Grade Filters Info */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                  <input 
+                    type="text" 
+                    placeholder="ค้นหาชื่อสถานีไฟฟ้า..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 text-xs bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-violet-500 shadow-sm"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  {activeGradeFilter && (
+                    <button 
+                      onClick={() => setActiveGradeFilter(null)}
+                      className="text-[10px] bg-slate-100 text-slate-500 px-3 py-1.5 rounded-xl font-bold hover:bg-slate-200 transition-colors cursor-pointer"
+                    >
+                      ล้างตัวกรอง ({activeGradeFilter === 'Excellent' ? 'ดีมาก' : activeGradeFilter === 'Good' ? 'ดี' : activeGradeFilter === 'Fair' ? 'ปานกลาง' : 'ต้องปรับปรุง'}) ✕
+                    </button>
+                  )}
+                  <span className="text-[10px] text-slate-400 font-bold">
+                    แสดงผล {
+                      SUBSTATIONS.filter(sub => {
+                        const matchesSearch = sub.name.toLowerCase().includes(searchQuery.toLowerCase());
+                        if (!matchesSearch) return false;
+                        if (!activeGradeFilter) return true;
+                        const r = healthIndex.find(h => h.substation_name === sub.name);
+                        const cal = calculateHIForSubstation(r);
+                        if (activeGradeFilter === 'Excellent') return cal.score >= 90;
+                        if (activeGradeFilter === 'Good') return cal.score >= 80 && cal.score < 90;
+                        if (activeGradeFilter === 'Fair') return cal.score >= 70 && cal.score < 80;
+                        if (activeGradeFilter === 'Poor') return cal.score < 70;
+                        return true;
+                      }).length
+                    } จาก {SUBSTATIONS.length} สถานี
+                  </span>
+                </div>
+              </div>
+
+              {/* List of Substations */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {SUBSTATIONS.filter(sub => {
+                  const matchesSearch = sub.name.toLowerCase().includes(searchQuery.toLowerCase());
+                  if (!matchesSearch) return false;
+                  
+                  if (!activeGradeFilter) return true;
+                  const r = healthIndex.find(h => h.substation_name === sub.name);
+                  const cal = calculateHIForSubstation(r);
+                  if (activeGradeFilter === 'Excellent') return cal.score >= 90;
+                  if (activeGradeFilter === 'Good') return cal.score >= 80 && cal.score < 90;
+                  if (activeGradeFilter === 'Fair') return cal.score >= 70 && cal.score < 80;
+                  if (activeGradeFilter === 'Poor') return cal.score < 70;
+                  return true;
+                }).map(sub => {
+                  const healthRow = healthIndex.find(h => h.substation_name === sub.name);
+                  const cal = calculateHIForSubstation(healthRow);
+                  const isAnalyzing = analyzing === sub.name;
+
+                  return (
+                    <Card key={sub.id} className="relative overflow-hidden hover:shadow-md transition-all border border-slate-100 bg-white p-5 flex flex-col justify-between">
+                      <div className={cn("absolute left-0 top-0 bottom-0 w-1.5", 
+                        !healthRow ? "bg-slate-300" :
+                        cal.score >= 90 ? "bg-emerald-500" :
+                        cal.score >= 80 ? "bg-teal-500" :
+                        cal.score >= 70 ? "bg-amber-500" : "bg-rose-500"
+                      )} />
+                      
+                      <div className="pl-3 space-y-3">
+                        {/* Substation Header */}
+                        <div className="flex justify-between items-start gap-2">
+                          <div>
+                            <h4 className="font-bold text-slate-800 text-sm">{sub.name}</h4>
+                            <span className="text-[9px] text-slate-400 font-bold block mt-0.5">สถานีประธานเขตไฟฟ้าแรงสูง</span>
+                          </div>
+                          {healthRow ? (
+                            <div className="flex flex-col items-end gap-1">
+                              <span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full border", cal.gradeColor)}>
+                                {cal.grade}
                               </span>
-                            ))
+                              <span className="text-xs font-mono font-extrabold text-slate-800">
+                                {cal.score}%
+                              </span>
+                            </div>
                           ) : (
-                            <span className="text-[10px] bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full font-bold">สะอาดเรียบร้อย</span>
+                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-400 border border-slate-200">
+                              ยังไม่ได้ประเมิน
+                            </span>
                           )}
                         </div>
-                        <p className="text-[10px] text-slate-500 leading-relaxed bg-slate-50 p-2 rounded-lg border border-slate-100 italic">
-                          "{health.summary}"
-                        </p>
-                        <p className="text-[8px] text-slate-300 text-right">วิเคราะห์เมื่อ: {format(new Date(health.analyzed_at), 'd MMM yy HH:mm', { locale: th })}</p>
-                      </div>
-                    ) : (
-                      <div className="py-6 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 mb-4">
-                        <p className="text-[10px] text-slate-400 italic">ยังไม่ได้วิเคราะห์ภาพถ่าย</p>
-                      </div>
-                    )}
 
-                    <div className="grid grid-cols-2 gap-2 mt-2">
-                      <Button 
-                        onClick={() => handleAnalyze(sub.name, !!health)} 
-                        disabled={isAnalyzing}
-                        className="py-2 text-[10px]"
-                        variant={health ? "outline" : "primary"}
-                      >
-                        {isAnalyzing ? (
-                          <><Loader2 className="animate-spin w-3 h-3" /> วิเคราะห์...</>
+                        {/* Six Categories Breakdown Visualizer */}
+                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/40 grid grid-cols-3 gap-y-2 gap-x-1">
+                          {[
+                            { name: '🔋 แบตเตอรี่', score: healthRow?.battery_score, na: healthRow?.battery_na },
+                            { name: '⚡ ลานไก', score: healthRow?.yard_score, na: healthRow?.yard_na },
+                            { name: '📝 Checklist', score: healthRow?.checklist_score, na: healthRow?.checklist_na },
+                            { name: '🏢 ดาดฟ้า', score: healthRow?.roof_score, na: healthRow?.roof_na },
+                            { name: '🚧 รั้วรอบ', score: healthRow?.fence_score, na: healthRow?.fence_na },
+                            { name: '👮 รปภ.', score: healthRow?.security_score, na: healthRow?.security_na }
+                          ].map((item, idx) => (
+                            <div key={idx} className="flex flex-col">
+                              <span className="text-[8px] text-slate-400 font-semibold truncate">{item.name}</span>
+                              <span className={cn("text-[10px] font-bold mt-0.5 font-mono",
+                                item.na ? "text-slate-300" :
+                                (item.score ?? 100) >= 90 ? "text-emerald-600" :
+                                (item.score ?? 100) >= 70 ? "text-amber-500" : "text-rose-500"
+                              )}>
+                                {item.na ? 'N/A' : `${item.score ?? 100}%`}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Audit Findings and Date Analysis */}
+                        {healthRow ? (
+                          <div className="space-y-1">
+                            <p className="text-[10px] text-slate-500 bg-violet-50/40 p-2 rounded-lg border border-violet-100/30 italic">
+                              "{healthRow.summary || 'ประเมินดัชนีสุขภาพปกติ ไร้วัชพืชและเศษขยะบนดาดฟ้า'}"
+                            </p>
+                            <div className="flex justify-between items-center text-[8px] text-slate-400">
+                              <span>ผู้ตรวจ: ฝ่ายวิศวกรรมไฟฟ้า</span>
+                              <span>ปรับปรุงเมื่อ: {format(new Date(healthRow.analyzed_at), 'dd MMM yy HH:mm', { locale: th })}</span>
+                            </div>
+                          </div>
                         ) : (
-                          <><LayoutDashboard size={12} /> {health ? 'วิเคราะห์ใหม่' : 'วิเคราะห์ด่วน'}</>
+                          <div className="py-2.5 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center">
+                            <p className="text-[9px] text-slate-400 italic">เกณฑ์ปกติคงค้างประเมิน กด "ประเมินผล" เพื่อเริ่มทำรายการ</p>
+                          </div>
                         )}
-                      </Button>
-                      <Button 
-                        onClick={async () => {
-                          setSelectedSubstationForAnalysis(sub.name);
-                          setImagesInFolder([]);
-                          // Find the folder ID for this substation/month
-                          try {
-                            const res = await fetch(`/api/analyze-substation`, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ substationName: sub.name, month: selectedMonth + 1, year: selectedYear, dryRun: true })
-                            });
-                            const data = await res.json();
-                            if (data.folderId) {
-                              fetchImagesInFolder(data.folderId);
-                            }
-                          } catch (err) {
-                            console.error(err);
-                          }
-                        }}
-                        className="py-2 text-[10px]"
-                        variant="outline"
-                      >
-                        <ImageIcon size={12} /> ดูรายรูปภาพ
-                      </Button>
-                    </div>
-                  </Card>
-                </div>
-              );
-            })}
-          </div>
-        )}
+
+                        {/* Buttons Grid */}
+                        <div className="grid grid-cols-3 gap-1.5 mt-2">
+                          <Button 
+                            onClick={() => {
+                              setSelectedSubForAudit({
+                                substation_name: sub.name,
+                                battery_score: healthRow?.battery_score ?? 100,
+                                battery_na: healthRow?.battery_na ?? false,
+                                yard_score: healthRow?.yard_score ?? 100,
+                                yard_na: healthRow?.yard_na ?? false,
+                                checklist_score: healthRow?.checklist_score ?? 100,
+                                checklist_na: healthRow?.checklist_na ?? false,
+                                roof_score: healthRow?.roof_score ?? 100,
+                                roof_na: healthRow?.roof_na ?? false,
+                                fence_score: healthRow?.fence_score ?? 100,
+                                fence_na: healthRow?.fence_na ?? false,
+                                security_score: healthRow?.security_score ?? 100,
+                                security_na: healthRow?.security_na ?? false,
+                                summary: healthRow?.summary ?? '',
+                                status: healthRow?.status ?? 'Green'
+                              });
+                            }} 
+                            className="py-1.5 text-[10px] font-bold bg-violet-600 hover:bg-violet-700 inline-flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            ประเมินผล
+                          </Button>
+
+                          <Button 
+                            onClick={() => handleAnalyze(sub.name, !!healthRow)} 
+                            disabled={isAnalyzing}
+                            className="py-1.5 text-[10px] font-bold inline-flex items-center justify-center gap-0.5 cursor-pointer"
+                            variant="outline"
+                          >
+                            {isAnalyzing ? (
+                              <><Loader2 className="animate-spin w-3 h-3" /> รอดำเนินการ</>
+                            ) : (
+                              <>วิเคราะห์ AI</>
+                            )}
+                          </Button>
+
+                          <Button 
+                            onClick={async () => {
+                              setSelectedSubstationForAnalysis(sub.name);
+                              setImagesInFolder([]);
+                              try {
+                                const res = await fetch(`/api/analyze-substation`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ substationName: sub.name, month: selectedMonth + 1, year: selectedYear, dryRun: true })
+                                });
+                                const data = await res.json();
+                                if (data.folderId) {
+                                  fetchImagesInFolder(data.folderId);
+                                }
+                              } catch (err) {
+                                console.error(err);
+                              }
+                            }}
+                            className="py-1.5 text-[10px] font-bold cursor-pointer"
+                            variant="outline"
+                          >
+                            รูปภาพ
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
       </div>
 
       {/* Image Analysis Detail Modal */}
@@ -1927,9 +2298,448 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Dynamic Health Index Appraisal Scoring Modal */}
+      <AnimatePresence>
+        {selectedSubForAudit && (() => {
+          const previewSubCal = calculateHIForSubstation(selectedSubForAudit);
+          const categoriesDetail = [
+            { name: "🔋 แบตเตอรี่", score: selectedSubForAudit.battery_na ? null : (selectedSubForAudit.battery_score ?? 100), weight: 0.25, na: selectedSubForAudit.battery_na },
+            { name: "⚡ ลานไก", score: selectedSubForAudit.yard_na ? null : (selectedSubForAudit.yard_score ?? 100), weight: 0.20, na: selectedSubForAudit.yard_na },
+            { name: "📝 Checklist", score: selectedSubForAudit.checklist_na ? null : (selectedSubForAudit.checklist_score ?? 100), weight: 0.15, na: selectedSubForAudit.checklist_na },
+            { name: "🏢 ดาดฟ้า", score: selectedSubForAudit.roof_na ? null : (selectedSubForAudit.roof_score ?? 100), weight: 0.15, na: selectedSubForAudit.roof_na },
+            { name: "🚧 รั้วรอบ", score: selectedSubForAudit.fence_na ? null : (selectedSubForAudit.fence_score ?? 100), weight: 0.15, na: selectedSubForAudit.fence_na },
+            { name: "👮 รปภ.", score: selectedSubForAudit.security_na ? null : (selectedSubForAudit.security_score ?? 100), weight: 0.10, na: selectedSubForAudit.security_na }
+          ];
+
+          const applicableCats = categoriesDetail.filter(c => !c.na);
+          const sumWeights = applicableCats.reduce((acc, c) => acc + c.weight, 0);
+          const sumWeightedScores = applicableCats.reduce((acc, c) => acc + ((c.score ?? 100) * c.weight), 0);
+          const calculatedHI = sumWeights > 0 ? (sumWeightedScores / sumWeights) : 0;
+
+          return (
+            <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 md:p-6 overflow-y-auto">
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setSelectedSubForAudit(null)}
+                className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+              />
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="relative w-full max-w-3xl bg-white rounded-3xl shadow-2xl flex flex-col my-8 max-h-[90vh] overflow-hidden"
+              >
+                {/* Header */}
+                <div className="p-6 border-b border-slate-150 flex justify-between items-center bg-slate-900 text-white">
+                  <div>
+                    <span className="text-[10px] font-bold text-teal-400 uppercase tracking-widest">แผงเกณฑ์ผลคะแนนและสูตรความสมบูรณ์</span>
+                    <h3 className="text-xl font-bold">{selectedSubForAudit.substation_name}</h3>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <span className="text-[10px] font-bold text-slate-300">ดัชนีสุขภาพจำลอง (Preview HI)</span>
+                    <span className="text-2xl font-mono font-extrabold text-teal-400">
+                      {previewSubCal.score}%
+                    </span>
+                  </div>
+                </div>
+
+                {/* Form fields */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50">
+                  {/* Real-time Math Breakdown Panel */}
+                  <div className="bg-slate-900 text-slate-100 p-5 rounded-2xl shadow-inner space-y-4">
+                    <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-pulse" />
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-teal-400">การคิดคำนวณตามสูตร Dynamic Weighting (เรียลไทม์)</h4>
+                      </div>
+                      <span className="text-[10px] font-mono bg-slate-800 text-teal-300 px-2 py-0.5 rounded-full font-bold">
+                        {applicableCats.length} / 6 หมวดที่ใช้จริง
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-medium">
+                      {/* Left: Active values list */}
+                      <div className="space-y-1.5 border-r border-slate-800/60 pr-2">
+                        <span className="text-[10px] text-slate-400 font-bold block mb-1">ผลประเมินในแต่ละหน่วย:</span>
+                        {categoriesDetail.map((c, idx) => (
+                          <div key={idx} className="flex justify-between items-center font-mono text-[11px]">
+                            <span className="text-slate-300">{c.name}:</span>
+                            {c.na ? (
+                              <span className="text-slate-500 font-bold text-[10px]">N/A (ข้าม)</span>
+                            ) : (
+                              <span className="text-slate-100">
+                                {c.score}% &times; {Math.round(c.weight * 100)}% = <strong className="text-teal-400">{((c.score ?? 100) * c.weight).toFixed(1)}</strong>
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Right: Calculations step-by-step */}
+                      <div className="flex flex-col justify-between space-y-3">
+                        <div className="space-y-2">
+                          <div>
+                            <span className="text-[10px] text-slate-400 font-bold block">1. ผลรวมคะแนนคูณน้ำหนัก Σ (Score &times; Weight):</span>
+                            <span className="text-xs font-mono font-bold text-teal-400 flex flex-wrap items-center gap-1 mt-0.5">
+                              {applicableCats.map(c => ((c.score ?? 100) * c.weight).toFixed(1)).join(' + ')}
+                              {' = '}
+                              <span className="text-white underline font-extrabold">{sumWeightedScores.toFixed(1)}</span>
+                            </span>
+                          </div>
+
+                          <div>
+                            <span className="text-[10px] text-slate-400 font-bold block">2. ผลรวมน้ำหนักที่ใช้งานจริง Σ Weight_Applicable:</span>
+                            <span className="text-xs font-mono font-bold text-slate-200 mt-1 block">
+                              {applicableCats.map(c => `${Math.round(c.weight * 100)}%`).join(' + ')}
+                              {' = '}
+                              <span className="text-teal-400 font-extrabold">{(sumWeights * 100).toFixed(0)}%</span> ({(sumWeights).toFixed(2)})
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-800 p-2.5 rounded-xl border border-slate-700/50 space-y-1">
+                          <span className="text-[9px] text-slate-400 font-bold block">3. ดัชนีสุขภาพทั้งหมด (Health Index %):</span>
+                          <div className="font-mono text-xs flex justify-between items-center">
+                            <span className="text-slate-300 text-[11px]">
+                              ({sumWeightedScores.toFixed(1)} / {(sumWeights).toFixed(2)})
+                            </span>
+                            <span className="text-lg font-black text-teal-300">
+                              = {previewSubCal.score}%
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Category 1: Battery */}
+                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+                    <div className="flex justify-between items-center">
+                      <h4 className="text-sm font-bold text-slate-800">🔋 1. แบตเตอรี่ (น้ำกลั่น) - น้ำหนัก 25%</h4>
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-400">
+                        <input 
+                          type="checkbox" 
+                          checked={selectedSubForAudit.battery_na}
+                          onChange={(e) => setSelectedSubForAudit({
+                            ...selectedSubForAudit,
+                            battery_na: e.target.checked
+                          })}
+                          className="rounded text-violet-650 focus:ring-violet-500"
+                        />
+                        ไม่มีอุปกรณ์นี้ (N/A)
+                      </label>
+                    </div>
+                    
+                    {!selectedSubForAudit.battery_na && (
+                      <div className="grid grid-cols-1 gap-2">
+                        {[
+                          { val: 100, desc: "100% - ระดับน้ำกลั่นทุกลูกอยู่สัดส่วนปกติ เห็นชัดเจน ขั้วไม่มีคราบเกลือกรด" },
+                          { val: 50, desc: "50% - ระดับน้ำกลั่นเริ่มต่ำกว่ากึ่งกลางแต่ยังไม่พ้นขีดล่าง หรือภาพถ่ายเบลอเลอะเลือน" },
+                          { val: 0, desc: "0% - น้ำกลั่นแห้งต่ำกว่าขีดจำกัดล่างสุด หรือตัวแบตเตอรี่ปูดบวมชำรุดร้ายแรง" }
+                        ].map(opt => (
+                          <label key={opt.val} className={cn("flex items-start gap-2.5 p-2 rounded-xl text-xs border transition-colors cursor-pointer",
+                            selectedSubForAudit.battery_score === opt.val ? "bg-violet-50 border-violet-200 text-violet-700 font-bold" : "bg-slate-50 border-slate-100 hover:bg-slate-100/50"
+                          )}>
+                            <input 
+                              type="radio" 
+                              name="battery_score" 
+                              checked={selectedSubForAudit.battery_score === opt.val}
+                              onChange={() => setSelectedSubForAudit({ ...selectedSubForAudit, battery_score: opt.val })}
+                              className="text-violet-600 focus:ring-violet-500 mt-0.5"
+                            />
+                            <span>{opt.desc}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Category 2: Yard */}
+                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+                    <div className="flex justify-between items-center">
+                      <h4 className="text-sm font-bold text-slate-800">⚡ 2. ลานไกสถานีไฟฟ้า - น้ำหนัก 20%</h4>
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-400">
+                        <input 
+                          type="checkbox" 
+                          checked={selectedSubForAudit.yard_na}
+                          onChange={(e) => setSelectedSubForAudit({
+                            ...selectedSubForAudit,
+                            yard_na: e.target.checked
+                          })}
+                          className="rounded text-violet-600 focus:ring-violet-500"
+                        />
+                        ไม่มีอุปกรณ์นี้ (N/A)
+                      </label>
+                    </div>
+                    
+                    {!selectedSubForAudit.yard_na && (
+                      <div className="grid grid-cols-1 gap-2">
+                        {[
+                          { val: 100, desc: "100% - พื้นหินสะอาดไม่มีเศษวัชพืช/หญ้าขัดหูขัดตา บัสบาร์สะอาดไร้รังนกหรือเศษขยะ" },
+                          { val: 70, desc: "70% - มีเศษหญ้าวัชพืชขนาดเล็กพึ่งขึ้นใหม่เบาบาง หรือพบคราบนํ้ามันเล็กน้อย" },
+                          { val: 30, desc: "30% - วัชพืชหญ้าขึ้นพ้นระดับกรวดเห็นเด่นชัด หรือพบคราบระลอกเขม่าใกล้เครื่องจักร" },
+                          { val: 0, desc: "0% - รกร้าง มีวัชพืชหนาแน่น หรือสิ่งล่วงล้ำระยะอันตรายไฟฟ้าแรงสูง" }
+                        ].map(opt => (
+                          <label key={opt.val} className={cn("flex items-start gap-2.5 p-2 rounded-xl text-xs border transition-colors cursor-pointer",
+                            selectedSubForAudit.yard_score === opt.val ? "bg-violet-50 border-violet-200 text-violet-700 font-bold" : "bg-slate-50 border-slate-100 hover:bg-slate-100/50"
+                          )}>
+                            <input 
+                              type="radio" 
+                              name="yard_score" 
+                              checked={selectedSubForAudit.yard_score === opt.val}
+                              onChange={() => setSelectedSubForAudit({ ...selectedSubForAudit, yard_score: opt.val })}
+                              className="text-violet-600 focus:ring-violet-500 mt-0.5"
+                            />
+                            <span>{opt.desc}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Category 3: Checklist */}
+                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+                    <div className="flex justify-between items-center">
+                      <h4 className="text-sm font-bold text-slate-800">📝 3. กระดาษ Check list (A4) - น้ำหนัก 15%</h4>
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-400">
+                        <input 
+                          type="checkbox" 
+                          checked={selectedSubForAudit.checklist_na}
+                          onChange={(e) => setSelectedSubForAudit({
+                            ...selectedSubForAudit,
+                            checklist_na: e.target.checked
+                          })}
+                          className="rounded text-violet-600 focus:ring-violet-500"
+                        />
+                        ไม่มีอุปกรณ์นี้ (N/A)
+                      </label>
+                    </div>
+                    
+                    {!selectedSubForAudit.checklist_na && (
+                      <div className="grid grid-cols-1 gap-2">
+                        {[
+                          { val: 100, desc: "100% - ช่องกรอกรายละเอียดข้อมูลชัด ลายมือคนจดอ่านง่าย ลบลายเซ็นครบถ้วนตรงวัน" },
+                          { val: 50, desc: "50% - ข้อมูลส่วนสำคัญเว้นว่างบางช่อง ตัวหนังสือค่อนข้างหวัดและเลอะเลือน" },
+                          { val: 0, desc: "0% - ขาดภาพถ่าย Checklist หุ่นยนต์, ลายเซ็นไม่ครบ หรือบันทึกวันที่ย้อนหลังเป็นเท็จ" }
+                        ].map(opt => (
+                          <label key={opt.val} className={cn("flex items-start gap-2.5 p-2 rounded-xl text-xs border transition-colors cursor-pointer",
+                            selectedSubForAudit.checklist_score === opt.val ? "bg-violet-50 border-violet-200 text-violet-700 font-bold" : "bg-slate-50 border-slate-100 hover:bg-slate-100/50"
+                          )}>
+                            <input 
+                              type="radio" 
+                              name="checklist_score" 
+                              checked={selectedSubForAudit.checklist_score === opt.val}
+                              onChange={() => setSelectedSubForAudit({ ...selectedSubForAudit, checklist_score: opt.val })}
+                              className="text-violet-600 focus:ring-violet-500 mt-0.5"
+                            />
+                            <span>{opt.desc}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Category 4: Roof */}
+                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+                    <div className="flex justify-between items-center">
+                      <h4 className="text-sm font-bold text-slate-800">🏢 4. ดาดฟ้าสถานี (ขี้นก/ระบายน้ำ) - น้ำหนัก 15%</h4>
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-400">
+                        <input 
+                          type="checkbox" 
+                          checked={selectedSubForAudit.roof_na}
+                          onChange={(e) => setSelectedSubForAudit({
+                            ...selectedSubForAudit,
+                            roof_na: e.target.checked
+                          })}
+                          className="rounded text-violet-600 focus:ring-violet-500"
+                        />
+                        ไม่มีดาดฟ้า (N/A)
+                      </label>
+                    </div>
+                    
+                    {!selectedSubForAudit.roof_na && (
+                      <div className="grid grid-cols-1 gap-2">
+                        {[
+                          { val: 100, desc: "100% - นํ้าระบายได้สะดวก ไม่มีใบไม้และคราบขี้นกคั่งค้างสะสมบนพื้นดาดฟ้าบ่อพัก" },
+                          { val: 50, desc: "50% - พบคราบขี้นกเกาะสะสมหนาปานกลาง แต่ยังไม่ส่งผลต่อการขวางทางระบายน้ำ" },
+                          { val: 0, desc: "0% - ระบบปากท่อระบายน้ำอุดตันเด่นชัดเจน หรือพบนํ้าเอ่อขังล้นดาดฟ้าสถานีวิจารณ์" }
+                        ].map(opt => (
+                          <label key={opt.val} className={cn("flex items-start gap-2.5 p-2 rounded-xl text-xs border transition-colors cursor-pointer",
+                            selectedSubForAudit.roof_score === opt.val ? "bg-violet-50 border-violet-200 text-violet-700 font-bold" : "bg-slate-50 border-slate-100 hover:bg-slate-100/50"
+                          )}>
+                            <input 
+                              type="radio" 
+                              name="roof_score" 
+                              checked={selectedSubForAudit.roof_score === opt.val}
+                              onChange={() => setSelectedSubForAudit({ ...selectedSubForAudit, roof_score: opt.val })}
+                              className="text-violet-600 focus:ring-violet-500 mt-0.5"
+                            />
+                            <span>{opt.desc}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Category 5: Fence */}
+                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+                    <div className="flex justify-between items-center">
+                      <h4 className="text-sm font-bold text-slate-800">🚧 5. รอบรั้วสถานี (4 ทิศทาง) - น้ำหนัก 15%</h4>
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-400">
+                        <input 
+                          type="checkbox" 
+                          checked={selectedSubForAudit.fence_na}
+                          onChange={(e) => setSelectedSubForAudit({
+                            ...selectedSubForAudit,
+                            fence_na: e.target.checked
+                          })}
+                          className="rounded text-violet-600 focus:ring-violet-500"
+                        />
+                        ไม่มีรั้ว (N/A)
+                      </label>
+                    </div>
+                    
+                    {!selectedSubForAudit.fence_na && (
+                      <div className="grid grid-cols-1 gap-2">
+                        {[
+                          { val: 100, desc: "100% - ถ่ายภาพครบ 4 ทิศ แนวรั้วแข็งแรง ประตูล็อคสนิท และมีป้ายเตือนไฟฟ้าชัดเจนดี" },
+                          { val: 50, desc: "50% - แนวภาพถ่ายขาดบางภาพย่อย หรือแนวต้นไม้เริ่มพาดรกรื้อพัวพันปิดสังกะสีรั้ว" },
+                          { val: 0, desc: "0% - มีรอยฉีกขาดหรือพังทลายเป็นรูเบ้อเริ่มบุกรุก หรือพบการทุบล็อคหักเสียหาย" }
+                        ].map(opt => (
+                          <label key={opt.val} className={cn("flex items-start gap-2.5 p-2 rounded-xl text-xs border transition-colors cursor-pointer",
+                            selectedSubForAudit.fence_score === opt.val ? "bg-violet-50 border-violet-200 text-violet-700 font-bold" : "bg-slate-50 border-slate-100 hover:bg-slate-100/50"
+                          )}>
+                            <input 
+                              type="radio" 
+                              name="fence_score" 
+                              checked={selectedSubForAudit.fence_score === opt.val}
+                              onChange={() => setSelectedSubForAudit({ ...selectedSubForAudit, fence_score: opt.val })}
+                              className="text-violet-600 focus:ring-violet-500 mt-0.5"
+                            />
+                            <span>{opt.desc}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Category 6: Security */}
+                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+                    <div className="flex justify-between items-center">
+                      <h4 className="text-sm font-bold text-slate-800">👮 6. รปภ. (การแต่งเครื่องแบบ) - น้ำหนัก 10%</h4>
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-400">
+                        <input 
+                          type="checkbox" 
+                          checked={selectedSubForAudit.security_na}
+                          onChange={(e) => setSelectedSubForAudit({
+                            ...selectedSubForAudit,
+                            security_na: e.target.checked
+                          })}
+                          className="rounded text-violet-600 focus:ring-violet-500"
+                        />
+                        ไม่มีจุดประจําการ (N/A)
+                      </label>
+                    </div>
+                    
+                    {!selectedSubForAudit.security_na && (
+                      <div className="grid grid-cols-1 gap-2">
+                        {[
+                          { val: 100, desc: "100% - สวมชุดยูนิฟอร์มครบถ้วน มีป้ายชื่อ หมวก เสื้อสะท้อนแสง รองเท้าหุ้มส้นปลอดภัย" },
+                          { val: 0, desc: "0% - ละทิ้งหน้าที่ ไม่อยู่ป้อมยาม สวมเสื้อผ้ากีดแตะ หรือแต่งกายผิดกฎร้ายแรง" }
+                        ].map(opt => (
+                          <label key={opt.val} className={cn("flex items-start gap-2.5 p-2 rounded-xl text-xs border transition-colors cursor-pointer",
+                            selectedSubForAudit.security_score === opt.val ? "bg-violet-50 border-violet-200 text-violet-700 font-bold" : "bg-slate-50 border-slate-100 hover:bg-slate-100/50"
+                          )}>
+                            <input 
+                              type="radio" 
+                              name="security_score" 
+                              checked={selectedSubForAudit.security_score === opt.val}
+                              onChange={() => setSelectedSubForAudit({ ...selectedSubForAudit, security_score: opt.val })}
+                              className="text-violet-600 focus:ring-violet-500 mt-0.5"
+                            />
+                            <span>{opt.desc}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Recommendations */}
+                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-2">
+                    <h4 className="text-sm font-bold text-slate-800">✍️ ข้อเสนอแนะการปรับปรุงเพิ่มเติม</h4>
+                    <textarea 
+                      value={selectedSubForAudit.summary}
+                      onChange={(e) => setSelectedSubForAudit({ ...selectedSubForAudit, summary: e.target.value })}
+                      placeholder="ระบุความคิดเห็นเพื่อแนะนำให้สถานีไฟฟ้าแรงสูงทำความสะอาดเรียบร้อย เช่น จัดระเบียบสาย..."
+                      rows={3}
+                      className="w-full text-xs p-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-violet-500"
+                    />
+                  </div>
+
+                  {/* Overriding Status (Red/Green) */}
+                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-2 flex justify-between items-center">
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800">🚦 สถานะการควบคุมหลัก (Operational Status)</h4>
+                      <p className="text-[10px] text-slate-400">ระบุสภาพความพร้อมทางกายภาพความปลอดภัย</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button 
+                        type="button"
+                        onClick={() => setSelectedSubForAudit({ ...selectedSubForAudit, status: 'Green' })}
+                        className={cn("px-4 py-2 text-xs font-bold rounded-xl border transition-colors cursor-pointer",
+                          selectedSubForAudit.status === 'Green' ? "bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-100" : "bg-white text-slate-600 hover:bg-slate-50"
+                        )}
+                      >
+                        Green (ปกติ)
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => setSelectedSubForAudit({ ...selectedSubForAudit, status: 'Red' })}
+                        className={cn("px-4 py-2 text-xs font-bold rounded-xl border transition-colors cursor-pointer",
+                          selectedSubForAudit.status === 'Red' ? "bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-100" : "bg-white text-slate-600 hover:bg-slate-50"
+                        )}
+                      >
+                        Red (พบปัญหา)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer Buttons */}
+                <div className="p-6 border-t border-slate-100 bg-white sticky bottom-0 z-10 flex gap-3">
+                  <Button 
+                    type="button"
+                    onClick={() => setSelectedSubForAudit(null)} 
+                    variant="outline"
+                    className="flex-1 cursor-pointer font-bold"
+                  >
+                    ยกเลิก
+                  </Button>
+                  <Button 
+                    type="button"
+                    onClick={() => handleSaveAudit(selectedSubForAudit)} 
+                    disabled={isSavingAudit}
+                    className="flex-1 bg-violet-600 hover:bg-violet-700 flex items-center justify-center gap-2 cursor-pointer font-bold text-white shadow-lg shadow-violet-100"
+                  >
+                    {isSavingAudit ? (
+                      <><Loader2 className="animate-spin w-4 h-4" /> บันทึก...</>
+                    ) : (
+                      <>บันทึกผลการประเมิน</>
+                    )}
+                  </Button>
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
+      </AnimatePresence>
     </div>
   );
 };
+
 
 // --- Main App ---
 
