@@ -2501,9 +2501,9 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                     {!selectedSubForAudit.battery_na && (
                       <div className="grid grid-cols-1 gap-2">
                         {[
-                          { val: 100, desc: "100% - ระดับน้ำกลั่นทุกลูกอยู่สัดส่วนปกติ เห็นชัดเจน ขั้วไม่มีคราบเกลือกรด" },
-                          { val: 50, desc: "50% - ระดับน้ำกลั่นเริ่มต่ำกว่ากึ่งกลางแต่ยังไม่พ้นขีดล่าง หรือภาพถ่ายเบลอเลอะเลือน" },
-                          { val: 0, desc: "0% - น้ำกลั่นแห้งต่ำกว่าขีดจำกัดล่างสุด หรือตัวแบตเตอรี่ปูดบวมชำรุดร้ายแรง" }
+                          { val: 100, desc: "100% - ระดับน้ำกลั่นทุกลูกอยู่ระหว่างขีด Upper-Lower เห็นชัดเจนในรูป ขั้วแบตไม่มีคราบเกลือ" },
+                          { val: 50, desc: "50% - มีบางลูกระดับน้ำเริ่มต่ำกว่ากึ่งกลางแต่ยังไม่พ้นขีดล่าง หรือภาพถ่ายเบลอจนระบุระดับได้ยาก" },
+                          { val: 0, desc: "0% - น้ำกลั่นแห้งต่ำกว่าขีดล่าง หรือพบความผิดปกติที่ตัวถังแบตเตอรี่" }
                         ].map(opt => (
                           <label key={opt.val} className={cn("flex items-start gap-2.5 p-2 rounded-xl text-xs border transition-colors cursor-pointer",
                             selectedSubForAudit.battery_score === opt.val ? "bg-violet-50 border-violet-200 text-violet-700 font-bold" : "bg-slate-50 border-slate-100 hover:bg-slate-100/50"
@@ -2543,10 +2543,10 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                     {!selectedSubForAudit.yard_na && (
                       <div className="grid grid-cols-1 gap-2">
                         {[
-                          { val: 100, desc: "100% - พื้นหินสะอาดไม่มีเศษวัชพืช/หญ้าขัดหูขัดตา บัสบาร์สะอาดไร้รังนกหรือเศษขยะ" },
-                          { val: 70, desc: "70% - มีเศษหญ้าวัชพืชขนาดเล็กพึ่งขึ้นใหม่เบาบาง หรือพบคราบนํ้ามันเล็กน้อย" },
-                          { val: 30, desc: "30% - วัชพืชหญ้าขึ้นพ้นระดับกรวดเห็นเด่นชัด หรือพบคราบระลอกเขม่าใกล้เครื่องจักร" },
-                          { val: 0, desc: "0% - รกร้าง มีวัชพืชหนาแน่น หรือสิ่งล่วงล้ำระยะอันตรายไฟฟ้าแรงสูง" }
+                          { val: 100, desc: "100% - พื้นลานกรวดไม่มีวัชพืช 100%, Bus bar สะอาดไม่มีเศษพลาสติก/สายสิญจน์/รังนก" },
+                          { val: 70, desc: "70% - พบวัชพืชเล็กน้อย หรือมีคราบน้ำมันที่พื้น" },
+                          { val: 30, desc: "30% - หญ้าสูงพ้นระดับหินกรวด หรือมีสิ่งแปลกปลอมใกล้ระยะ Flashover ของ Bus bar" },
+                          { val: 0, desc: "0% - รกร้าง มีวัชพืชหนาแน่นจัด หรือมีสิ่งรุกล้ำระยะอันตรายไฟฟ้าแรงสูง" }
                         ].map(opt => (
                           <label key={opt.val} className={cn("flex items-start gap-2.5 p-2 rounded-xl text-xs border transition-colors cursor-pointer",
                             selectedSubForAudit.yard_score === opt.val ? "bg-violet-50 border-violet-200 text-violet-700 font-bold" : "bg-slate-50 border-slate-100 hover:bg-slate-100/50"
@@ -2586,9 +2586,9 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                     {!selectedSubForAudit.checklist_na && (
                       <div className="grid grid-cols-1 gap-2">
                         {[
-                          { val: 100, desc: "100% - ช่องกรอกรายละเอียดข้อมูลชัด ลายมือคนจดอ่านง่าย ลบลายเซ็นครบถ้วนตรงวัน" },
-                          { val: 50, desc: "50% - ข้อมูลส่วนสำคัญเว้นว่างบางช่อง ตัวหนังสือค่อนข้างหวัดและเลอะเลือน" },
-                          { val: 0, desc: "0% - ขาดภาพถ่าย Checklist หุ่นยนต์, ลายเซ็นไม่ครบ หรือบันทึกวันที่ย้อนหลังเป็นเท็จ" }
+                          { val: 100, desc: "100% - ภาพถ่ายเห็นชัดว่าลงบันทึกครบทุกช่อง, มีลายเซ็นผู้ตรวจและผู้ควบคุมงาน, วันที่ตรงกับวันปัจจุบัน" },
+                          { val: 50, desc: "50% - ลงข้อมูลไม่ครบบางส่วน หรือลายมืออ่านยากมากจนอาจเกิดความเข้าใจผิด" },
+                          { val: 0, desc: "0% - ไม่มีการลงบันทึก, วันที่ย้อนหลัง หรือไม่มีภาพถ่าย Checklist" }
                         ].map(opt => (
                           <label key={opt.val} className={cn("flex items-start gap-2.5 p-2 rounded-xl text-xs border transition-colors cursor-pointer",
                             selectedSubForAudit.checklist_score === opt.val ? "bg-violet-50 border-violet-200 text-violet-700 font-bold" : "bg-slate-50 border-slate-100 hover:bg-slate-100/50"
@@ -2628,9 +2628,9 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                     {!selectedSubForAudit.roof_na && (
                       <div className="grid grid-cols-1 gap-2">
                         {[
-                          { val: 100, desc: "100% - นํ้าระบายได้สะดวก ไม่มีใบไม้และคราบขี้นกคั่งค้างสะสมบนพื้นดาดฟ้าบ่อพัก" },
-                          { val: 50, desc: "50% - พบคราบขี้นกเกาะสะสมหนาปานกลาง แต่ยังไม่ส่งผลต่อการขวางทางระบายน้ำ" },
-                          { val: 0, desc: "0% - ระบบปากท่อระบายน้ำอุดตันเด่นชัดเจน หรือพบนํ้าเอ่อขังล้นดาดฟ้าสถานีวิจารณ์" }
+                          { val: 100, desc: "100% - ปากท่อระบายน้ำสะอาด ไม่มีขี้นกสะสม หรือเศษวัสดุขวางทางน้ำ" },
+                          { val: 50, desc: "50% - มีขี้นกสะสมบ้างแต่ยังไม่ส่งกลิ่นหรืออุดตัน" },
+                          { val: 0, desc: "0% - ท่อระบายน้ำอุดตันชัดเจน หรือมีน้ำขังบนดาดฟ้า" }
                         ].map(opt => (
                           <label key={opt.val} className={cn("flex items-start gap-2.5 p-2 rounded-xl text-xs border transition-colors cursor-pointer",
                             selectedSubForAudit.roof_score === opt.val ? "bg-violet-50 border-violet-200 text-violet-700 font-bold" : "bg-slate-50 border-slate-100 hover:bg-slate-100/50"
@@ -2670,9 +2670,9 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                     {!selectedSubForAudit.fence_na && (
                       <div className="grid grid-cols-1 gap-2">
                         {[
-                          { val: 100, desc: "100% - ถ่ายภาพครบ 4 ทิศ แนวรั้วแข็งแรง ประตูล็อคสนิท และมีป้ายเตือนไฟฟ้าชัดเจนดี" },
-                          { val: 50, desc: "50% - แนวภาพถ่ายขาดบางภาพย่อย หรือแนวต้นไม้เริ่มพาดรกรื้อพัวพันปิดสังกะสีรั้ว" },
-                          { val: 0, desc: "0% - มีรอยฉีกขาดหรือพังทลายเป็นรูเบ้อเริ่มบุกรุก หรือพบการทุบล็อคหักเสียหาย" }
+                          { val: 100, desc: "100% - ภาพครบ 4 ด้าน, รั้วไม่มีช่องโหว่, ประตูล็อคสนิท, ป้ายเตือนอันตรายชัดเจน" },
+                          { val: 50, desc: "50% - ขาดภาพบางด้าน หรือมีต้นไม้ขึ้นหนาจนมองไม่เห็นสภาพรั้ว" },
+                          { val: 0, desc: "0% - รั้วชำรุด หรือมีการบุกรุก/สัตว์ทำรังขนาดใหญ่" }
                         ].map(opt => (
                           <label key={opt.val} className={cn("flex items-start gap-2.5 p-2 rounded-xl text-xs border transition-colors cursor-pointer",
                             selectedSubForAudit.fence_score === opt.val ? "bg-violet-50 border-violet-200 text-violet-700 font-bold" : "bg-slate-50 border-slate-100 hover:bg-slate-100/50"
@@ -2712,8 +2712,8 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                     {!selectedSubForAudit.security_na && (
                       <div className="grid grid-cols-1 gap-2">
                         {[
-                          { val: 100, desc: "100% - สวมชุดยูนิฟอร์มครบถ้วน มีป้ายชื่อ หมวก เสื้อสะท้อนแสง รองเท้าหุ้มส้นปลอดภัย" },
-                          { val: 0, desc: "0% - ละทิ้งหน้าที่ ไม่อยู่ป้อมยาม สวมเสื้อผ้ากีดแตะ หรือแต่งกายผิดกฎร้ายแรง" }
+                          { val: 100, desc: "100% - สวมเครื่องแบบตามระเบียบครบถ้วน รวมไปถึงอุปกรณ์ความปลอดภัย (ถ้ากำหนด)" },
+                          { val: 0, desc: "0% - แต่งกายไม่เรียบร้อย (เช่น สวมรองเท้าแตะ, ไม่ใส่เสื้อเครื่องแบบ) หรือไม่อยู่ในจุดปฏิบัติงาน" }
                         ].map(opt => (
                           <label key={opt.val} className={cn("flex items-start gap-2.5 p-2 rounded-xl text-xs border transition-colors cursor-pointer",
                             selectedSubForAudit.security_score === opt.val ? "bg-violet-50 border-violet-200 text-violet-700 font-bold" : "bg-slate-50 border-slate-100 hover:bg-slate-100/50"
