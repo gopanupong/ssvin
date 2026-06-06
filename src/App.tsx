@@ -20,7 +20,8 @@ import {
   Sliders,
   Info,
   Shield,
-  Wrench
+  Wrench,
+  Sparkles
 } from 'lucide-react';
 import { cn, SUBSTATIONS, InspectionLog } from './constants';
 import { format } from 'date-fns';
@@ -966,6 +967,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   
   const [selectedSubForAudit, setSelectedSubForAudit] = useState<any | null>(null);
   const [isSavingAudit, setIsSavingAudit] = useState(false);
+  const [isRerunningAI, setIsRerunningAI] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeGradeFilter, setActiveGradeFilter] = useState<string | null>(null);
 
@@ -1202,6 +1204,45 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
       }
     } finally {
       setAnalyzing(null);
+    }
+  };
+
+  const handleModalAutoEvaluate = async (substationName: string) => {
+    setIsRerunningAI(true);
+    try {
+      const res = await fetch('/api/analyze-substation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ substationName, month: selectedMonth + 1, year: selectedYear, force: true })
+      });
+      const data = await res.json();
+      if (data.error) {
+        alert(data.error);
+      } else {
+        setSelectedSubForAudit({
+          substation_name: substationName,
+          battery_score: data.battery_score !== undefined ? data.battery_score : 100,
+          battery_na: !!data.battery_na,
+          yard_score: data.yard_score !== undefined ? data.yard_score : 100,
+          yard_na: !!data.yard_na,
+          checklist_score: data.checklist_score !== undefined ? data.checklist_score : 100,
+          checklist_na: !!data.checklist_na,
+          roof_score: data.roof_score !== undefined ? data.roof_score : 100,
+          roof_na: !!data.roof_na,
+          fence_score: data.fence_score !== undefined ? data.fence_score : 100,
+          fence_na: !!data.fence_na,
+          security_score: data.security_score !== undefined ? data.security_score : 100,
+          security_na: !!data.security_na,
+          summary: data.summary || '',
+          status: data.status || 'Green'
+        });
+        fetchHealthIndex();
+      }
+    } catch (err) {
+      console.error(err);
+      alert("ไม่สามารถติดต่อเซิร์ฟเวอร์เพื่อวิเคราะห์ด้วย AI ได้");
+    } finally {
+      setIsRerunningAI(false);
     }
   };
 
@@ -2336,7 +2377,31 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                 <div className="p-6 border-b border-slate-150 flex justify-between items-center bg-slate-900 text-white">
                   <div>
                     <span className="text-[10px] font-bold text-teal-400 uppercase tracking-widest">แผงเกณฑ์ผลคะแนนและสูตรความสมบูรณ์</span>
-                    <h3 className="text-xl font-bold">{selectedSubForAudit.substation_name}</h3>
+                    <div className="flex flex-wrap items-center gap-3 mt-1">
+                      <h3 className="text-xl font-bold">{selectedSubForAudit.substation_name}</h3>
+                      <button
+                        type="button"
+                        disabled={isRerunningAI}
+                        onClick={() => handleModalAutoEvaluate(selectedSubForAudit.substation_name)}
+                        className={`text-[11px] font-extrabold h-7 px-2.5 rounded-lg inline-flex items-center gap-1 cursor-pointer transition-all ${
+                          isRerunningAI 
+                            ? 'bg-slate-800 text-slate-400 border border-slate-700' 
+                            : 'bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold active:scale-95'
+                        }`}
+                      >
+                        {isRerunningAI ? (
+                          <>
+                            <Loader2 className="animate-spin w-3 h-3" />
+                            <span>กำลังประเมินด้วย AI...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-3.5 h-3.5 text-slate-950 fill-slate-950" />
+                            <span>สแกนภาพ & ประเมินด้วย AI อัตโนมัติ</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                   <div className="flex flex-col items-end">
                     <span className="text-[10px] font-bold text-slate-300">ดัชนีสุขภาพจำลอง (Preview HI)</span>

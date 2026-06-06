@@ -263,6 +263,174 @@ async function saveAnalysisResult(result: any) {
   }, { timeout: 10000 });
 }
 
+// --- Google Sheets database Tab Helpers for persistent audits ---
+async function initDatabaseSheet() {
+  const auth = getGoogleAuth();
+  if (!auth) return;
+  const sheetsService = google.sheets({ version: "v4", auth });
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID || "1WpvuQnhXzufiBmSRSaEnkRFs9BJf5H4fIWZ0xoYC8iw";
+  if (!spreadsheetId) return;
+
+  try {
+    const spreadsheet = await sheetsService.spreadsheets.get({ spreadsheetId });
+    const sheetExists = spreadsheet.data.sheets?.some(s => s.properties?.title === "database");
+
+    if (!sheetExists) {
+      await sheetsService.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [{
+            addSheet: { properties: { title: "database" } }
+          }]
+        }
+      });
+      await sheetsService.spreadsheets.values.update({
+        spreadsheetId,
+        range: "database!A1:S1",
+        valueInputOption: "RAW",
+        requestBody: {
+          values: [[
+            "Substation Name", "Month", "Year", "Status", "Findings", "Summary", "Analyzed At", 
+            "Battery Score", "Battery N/A", 
+            "Yard Score", "Yard N/A", 
+            "Checklist Score", "Checklist N/A", 
+            "Roof Score", "Roof N/A", 
+            "Fence Score", "Fence N/A", 
+            "Security Score", "Security N/A"
+          ]]
+        }
+      });
+    }
+  } catch (err) {
+    console.error("Failed to init database sheet:", err);
+  }
+}
+
+async function getHealthIndexFromSheet(): Promise<any[]> {
+  const auth = getGoogleAuth();
+  if (!auth) return [];
+  const sheetsService = google.sheets({ version: "v4", auth });
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID || "1WpvuQnhXzufiBmSRSaEnkRFs9BJf5H4fIWZ0xoYC8iw";
+  if (!spreadsheetId) return [];
+
+  try {
+    const response = await sheetsService.spreadsheets.values.get({
+      spreadsheetId,
+      range: "database!A:S"
+    });
+    const rows = response.data.values || [];
+    if (rows.length <= 1) return [];
+
+    return rows.slice(1).map(row => {
+      return {
+        substation_name: row[0] || "",
+        month: parseInt(row[1]) || 1,
+        year: parseInt(row[2]) || 2026,
+        status: row[3] || "Green",
+        findings: row[4] ? row[4].split(",") : [],
+        summary: row[5] || "",
+        analyzed_at: row[6] || "",
+        battery_score: row[7] !== undefined && row[7] !== "" ? parseInt(row[7]) : 100,
+        battery_na: row[8] ? (row[8] === "TRUE" || row[8] === "true" || row[8] === "1") : false,
+        yard_score: row[9] !== undefined && row[9] !== "" ? parseInt(row[9]) : 100,
+        yard_na: row[10] ? (row[10] === "TRUE" || row[10] === "true" || row[10] === "1") : false,
+        checklist_score: row[11] !== undefined && row[11] !== "" ? parseInt(row[11]) : 100,
+        checklist_na: row[12] ? (row[12] === "TRUE" || row[12] === "true" || row[12] === "1") : false,
+        roof_score: row[13] !== undefined && row[13] !== "" ? parseInt(row[13]) : 100,
+        roof_na: row[14] ? (row[14] === "TRUE" || row[14] === "true" || row[14] === "1") : false,
+        fence_score: row[15] !== undefined && row[15] !== "" ? parseInt(row[15]) : 100,
+        fence_na: row[16] ? (row[16] === "TRUE" || row[16] === "true" || row[16] === "1") : false,
+        security_score: row[17] !== undefined && row[17] !== "" ? parseInt(row[17]) : 100,
+        security_na: row[18] ? (row[18] === "TRUE" || row[18] === "true" || row[18] === "1") : false
+      };
+    });
+  } catch (err: any) {
+    if (err.code === 404 || (err.response && err.response.status === 400)) {
+      await initDatabaseSheet();
+    }
+    return [];
+  }
+}
+
+async function saveHealthIndexToSheet(data: any) {
+  const auth = getGoogleAuth();
+  if (!auth) return;
+  const sheetsService = google.sheets({ version: "v4", auth });
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID || "1WpvuQnhXzufiBmSRSaEnkRFs9BJf5H4fIWZ0xoYC8iw";
+  if (!spreadsheetId) return;
+
+  try {
+    await initDatabaseSheet();
+
+    // Check if conflicting row matches substationName, month, year
+    const getResponse = await sheetsService.spreadsheets.values.get({
+      spreadsheetId,
+      range: "database!A:S"
+    });
+    const rows = getResponse.data.values || [];
+    
+    let foundIndex = -1;
+    for (let i = 1; i < rows.length; i++) {
+      const sName = rows[i][0];
+      const m = parseInt(rows[i][1]);
+      const y = parseInt(rows[i][2]);
+      if (sName === data.substationName && m === parseInt(data.month) && y === parseInt(data.year)) {
+        foundIndex = i;
+        break;
+      }
+    }
+
+    const rowData = [
+      data.substationName,
+      String(data.month),
+      String(data.year),
+      data.status || "Green",
+      Array.isArray(data.findings) ? data.findings.join(",") : (data.findings || ""),
+      data.summary || "",
+      new Date().toISOString(),
+      data.battery_score !== undefined ? String(data.battery_score) : "100",
+      data.battery_na ? "TRUE" : "FALSE",
+      data.yard_score !== undefined ? String(data.yard_score) : "100",
+      data.yard_na ? "TRUE" : "FALSE",
+      data.checklist_score !== undefined ? String(data.checklist_score) : "100",
+      data.checklist_na ? "TRUE" : "FALSE",
+      data.roof_score !== undefined ? String(data.roof_score) : "100",
+      data.roof_na ? "TRUE" : "FALSE",
+      data.fence_score !== undefined ? String(data.fence_score) : "100",
+      data.fence_na ? "TRUE" : "FALSE",
+      data.security_score !== undefined ? String(data.security_score) : "100",
+      data.security_na ? "TRUE" : "FALSE"
+    ];
+
+    if (foundIndex !== -1) {
+      // 1-indexed for Sheets, foundIndex as 0-indexed translates to foundIndex + 1
+      const range = `database!A${foundIndex + 1}:S${foundIndex + 1}`;
+      await sheetsService.spreadsheets.values.update({
+        spreadsheetId,
+        range,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [rowData]
+        }
+      });
+      console.log(`Updated existing row for ${data.substationName} in Google Sheets database (row ${foundIndex + 1})`);
+    } else {
+      await sheetsService.spreadsheets.values.append({
+        spreadsheetId,
+        range: "database!A:S",
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [rowData]
+        }
+      });
+      console.log(`Appended new row for ${data.substationName} in Google Sheets database`);
+    }
+  } catch (sheetErr) {
+    console.error("Failed to save health index to Google Sheets: database", sheetErr);
+    throw sheetErr;
+  }
+}
+
 // Route to start OAuth flow
 app.get("/api/auth/google", (req, res) => {
   console.log("Starting Google OAuth flow...");
@@ -498,16 +666,22 @@ app.post("/api/analyze-image", async (req: any, res: any) => {
     console.time(`Analysis-${fileId}`);
     const ai = new GoogleGenAI({ apiKey });
     const prompt = `คุณคือผู้เชี่ยวชาญด้านความปลอดภัยและความสะอาดของสถานีไฟฟ้าแรงสูง (Power Substation)
-กรุณาวิเคราะห์รูปภาพนี้และตรวจสอบสิ่งต่อไปนี้:
+กรุณาวิเคราะห์รูปภาพนี้เพื่อประเมินระดับดัชนีสุขภาพ (Health Index Score):
 1. ความสะอาดเรียบร้อยโดยรวม (Cleanliness and Orderliness)
 2. วัชพืชหรือหญ้า (Weed): หากพบหญ้าขึ้นสูงเกิน 5 ซม. ให้รายงานว่า "Weed"
 3. คราบขี้นกหรือสิ่งแปลกปลอม (Bird Droppings): หากพบคราบสีขาวหรือสิ่งแปลกปลอมบนอุปกรณ์ไฟฟ้า ให้รายงานว่า "Bird Droppings"
 
+และระบุหมวดหมู่กับคะแนนตามเกณฑ์ดังนี้:
+- หมวดหมู่ (category): กำหนดเป็นหนึ่งในหัวข้อต่อไปนี้ 'Battery', 'Yard', 'Checklist', 'Roof', 'Fence', 'Security', หรือ 'Other'
+- คะแนน (score): ประเมินคะแนนสภาพจาก 0 ถึง 100 คะแนน (หากสมบูรณ์สะอาดเป็น 100, หักคะแนน 10-50 คะแนนตามระดับความเสียหาย/ความรกขยะฝุ่นละออง/รอยแตกร้าว)
+
 ตอบกลับในรูปแบบ JSON เท่านั้น โดยมีโครงสร้างดังนี้:
 {
-  "status": "Red" หรือ "Green" (Red หากพบปัญหา Weed หรือ Bird Droppings, Green หากสะอาดเรียบร้อย),
-  "findings": ["Weed", "Bird Droppings", ...], (อาเรย์ของคำหลักที่พบ),
-  "summary": "สรุปผลการวิเคราะห์สั้นๆ เป็นภาษาไทย"
+  "status": "Red" หรือ "Green" (Red หากพบปัญหาหรือสิ่งชำรุดบกพร่อง, Green หากสะอาดเรียบร้อยดี),
+  "findings": ["Weed", "Bird Droppings", ...], (อาเรย์ระบุคำหลักปัญหาที่พบ),
+  "summary": "สรุปผลการวิเคราะห์สั้นๆ เป็นภาษาไทย",
+  "category": "Battery" | "Yard" | "Checklist" | "Roof" | "Fence" | "Security" | "Other",
+  "score": 100
 }`;
 
     // Add a timeout to Gemini call to prevent hanging
@@ -528,9 +702,11 @@ app.post("/api/analyze-image", async (req: any, res: any) => {
           properties: {
             status: { type: Type.STRING },
             findings: { type: Type.ARRAY, items: { type: Type.STRING } },
-            summary: { type: Type.STRING }
+            summary: { type: Type.STRING },
+            category: { type: Type.STRING },
+            score: { type: Type.INTEGER }
           },
-          required: ["status", "findings", "summary"]
+          required: ["status", "findings", "summary", "category", "score"]
         }
       }
     });
@@ -1168,8 +1344,19 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
   }
 
   try {
-    // Check if already analyzed in DB to avoid redundant calls if not forced
+    // Check if already analyzed in Google Sheets first, then DB to avoid redundant calls if not forced
     if (!force && !dryRun) {
+      try {
+        const list = await getHealthIndexFromSheet();
+        const existing = list.find(h => h.substation_name === substationName && h.month === parseInt(month) && h.year === parseInt(year));
+        if (existing) {
+          console.log(`Substation ${substationName} already analyzed in Google Sheet, returning existing result.`);
+          return res.json(existing);
+        }
+      } catch (sheetErr) {
+        console.error("Failed to read from Google Sheet during check:", sheetErr);
+      }
+
       const pool = getDbPool();
       if (pool) {
         const existing = await pool.query(
@@ -1246,6 +1433,18 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
         folderId: null
       };
       
+      // Save "No Data" state to Google Sheets so it shows up
+      try {
+        await saveHealthIndexToSheet({
+          substationName, month, year,
+          status: noDataResult.status,
+          findings: noDataResult.findings,
+          summary: noDataResult.summary
+        });
+      } catch (sheetErr) {
+        console.error("Failed to save 'No Data' to Google Sheets:", sheetErr);
+      }
+
       // Save "No Data" state to DB so it shows up
       const pool = getDbPool();
       if (pool) {
@@ -1290,6 +1489,18 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
         summary: `ไม่พบรูปภาพในเดือน ${month}/${year}` 
       };
       
+      // Save "No Image" state to Google Sheets so it shows up
+      try {
+        await saveHealthIndexToSheet({
+          substationName, month, year,
+          status: noImageResult.status,
+          findings: noImageResult.findings,
+          summary: noImageResult.summary
+        });
+      } catch (sheetErr) {
+        console.error("Failed to save 'No Image' to Google Sheets:", sheetErr);
+      }
+
       const pool = getDbPool();
       if (pool) {
         await pool.query(
@@ -1339,16 +1550,22 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
           // Analyze this single image
           const ai = new GoogleGenAI({ apiKey });
           const prompt = `คุณคือผู้เชี่ยวชาญด้านความปลอดภัยและความสะอาดของสถานีไฟฟ้าแรงสูง (Power Substation)
-กรุณาวิเคราะห์รูปภาพนี้และตรวจสอบสิ่งต่อไปนี้:
+กรุณาวิเคราะห์รูปภาพนี้เพื่อประเมินระดับดัชนีสุขภาพ (Health Index Score):
 1. ความสะอาดเรียบร้อยโดยรวม (Cleanliness and Orderliness)
 2. วัชพืชหรือหญ้า (Weed): หากพบหญ้าขึ้นสูงเกิน 5 ซม. ให้รายงานว่า "Weed"
 3. คราบขี้นกหรือสิ่งแปลกปลอม (Bird Droppings): หากพบคราบสีขาวหรือสิ่งแปลกปลอมบนอุปกรณ์ไฟฟ้า ให้รายงานว่า "Bird Droppings"
 
+และระบุหมวดหมู่กับคะแนนตามเกณฑ์ดังนี้:
+- หมวดหมู่ (category): กำหนดเป็นหนึ่งในหัวข้อต่อไปนี้ 'Battery', 'Yard', 'Checklist', 'Roof', 'Fence', 'Security', หรือ 'Other'
+- คะแนน (score): ประเมินคะแนนสภาพจาก 0 ถึง 100 คะแนน (หากสมบูรณ์สะอาดเป็น 100, หักคะแนน 10-50 คะแนนตามระดับความเสียหาย/ความรกขยะฝุ่นละออง/รอยแตกร้าว)
+
 ตอบกลับในรูปแบบ JSON เท่านั้น โดยมีโครงสร้างดังนี้:
 {
-  "status": "Red" หรือ "Green" (Red หากพบปัญหา Weed หรือ Bird Droppings, Green หากสะอาดเรียบร้อย),
-  "findings": ["Weed", "Bird Droppings", ...], (อาเรย์ของคำหลักที่พบ),
-  "summary": "สรุปผลการวิเคราะห์สั้นๆ เป็นภาษาไทย"
+  "status": "Red" หรือ "Green" (Red หากพบปัญหาหรือสิ่งชำรุดบกพร่อง, Green หากสะอาดเรียบร้อยดี),
+  "findings": ["Weed", "Bird Droppings", ...], (อาเรย์ระบุคำหลักปัญหาที่พบ),
+  "summary": "สรุปผลการวิเคราะห์สั้นๆ เป็นภาษาไทย",
+  "category": "Battery" | "Yard" | "Checklist" | "Roof" | "Fence" | "Security" | "Other",
+  "score": 100
 }`;
 
           console.log(`Calling Gemini for image: ${img.name}...`);
@@ -1369,9 +1586,11 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
                 properties: {
                   status: { type: Type.STRING },
                   findings: { type: Type.ARRAY, items: { type: Type.STRING } },
-                  summary: { type: Type.STRING }
+                  summary: { type: Type.STRING },
+                  category: { type: Type.STRING },
+                  score: { type: Type.INTEGER }
                 },
-                required: ["status", "findings", "summary"]
+                required: ["status", "findings", "summary", "category", "score"]
               }
             }
           });
@@ -1437,24 +1656,130 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
       summaryText += `ทุกภาพอยู่ในสภาพปกติเรียบร้อยดี`;
     }
 
+    // Dynamic Weighting Analysis Aggregation from AI categorized images
+    const categoryMapping: any = {
+      battery: { count: 0, minScore: 100 },
+      yard: { count: 0, minScore: 100 },
+      checklist: { count: 0, minScore: 100 },
+      roof: { count: 0, minScore: 100 },
+      fence: { count: 0, minScore: 100 },
+      security: { count: 0, minScore: 100 }
+    };
+
+    individualResults.forEach((r: any) => {
+      if (!r.category) return;
+      const cat = r.category.toLowerCase().trim();
+      const scoreVal = typeof r.score === 'number' ? r.score : parseInt(r.score) || 100;
+      if (categoryMapping[cat] !== undefined) {
+        categoryMapping[cat].count += 1;
+        categoryMapping[cat].minScore = Math.min(categoryMapping[cat].minScore, scoreVal);
+      }
+    });
+
+    const battery_na = categoryMapping.battery.count === 0;
+    const battery_score = battery_na ? 100 : categoryMapping.battery.minScore;
+
+    const yard_na = categoryMapping.yard.count === 0;
+    const yard_score = yard_na ? 100 : categoryMapping.yard.minScore;
+
+    const checklist_na = categoryMapping.checklist.count === 0;
+    const checklist_score = checklist_na ? 100 : categoryMapping.checklist.minScore;
+
+    const roof_na = categoryMapping.roof.count === 0;
+    const roof_score = roof_na ? 100 : categoryMapping.roof.minScore;
+
+    const fence_na = categoryMapping.fence.count === 0;
+    const fence_score = fence_na ? 100 : categoryMapping.fence.minScore;
+
+    const security_na = categoryMapping.security.count === 0;
+    const security_score = security_na ? 100 : categoryMapping.security.minScore;
+
     const finalAnalysis = {
       status: isRed ? 'Red' : 'Green',
       findings: allFindings,
-      summary: summaryText.length > 1000 ? summaryText.substring(0, 997) + "..." : summaryText
+      summary: summaryText.length > 1000 ? summaryText.substring(0, 997) + "..." : summaryText,
+      battery_score,
+      battery_na,
+      yard_score,
+      yard_na,
+      checklist_score,
+      checklist_na,
+      roof_score,
+      roof_na,
+      fence_score,
+      fence_na,
+      security_score,
+      security_na
     };
     
+    // Save to Google Sheets
+    try {
+      await saveHealthIndexToSheet({
+        substationName, month, year,
+        status: finalAnalysis.status,
+        findings: finalAnalysis.findings,
+        summary: finalAnalysis.summary,
+        battery_score: finalAnalysis.battery_score,
+        battery_na: finalAnalysis.battery_na,
+        yard_score: finalAnalysis.yard_score,
+        yard_na: finalAnalysis.yard_na,
+        checklist_score: finalAnalysis.checklist_score,
+        checklist_na: finalAnalysis.checklist_na,
+        roof_score: finalAnalysis.roof_score,
+        roof_na: finalAnalysis.roof_na,
+        fence_score: finalAnalysis.fence_score,
+        fence_na: finalAnalysis.fence_na,
+        security_score: finalAnalysis.security_score,
+        security_na: finalAnalysis.security_na
+      });
+      console.log(`Saved AI Analysis with dynamic weighting to Google Sheets for ${substationName}`);
+    } catch (sheetErr) {
+      console.error("Failed to save analysis to Google Sheets:", sheetErr);
+    }
+
     // 7. Save to DB
     const pool = getDbPool();
     if (pool) {
       try {
-        const dbResult = await pool.query(
-          `INSERT INTO health_index_logs (substation_name, month, year, status, findings, summary)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT (substation_name, month, year) 
-           DO UPDATE SET status = EXCLUDED.status, findings = EXCLUDED.findings, summary = EXCLUDED.summary, analyzed_at = CURRENT_TIMESTAMP`,
-          [substationName, month, year, finalAnalysis.status, finalAnalysis.findings, finalAnalysis.summary]
-        );
-        console.log(`Saved analysis to DB for ${substationName}: ${dbResult.rowCount} rows affected`);
+        const q = `
+          INSERT INTO health_index_logs (
+            substation_name, month, year, status, findings, summary, analyzed_at,
+            battery_score, battery_na,
+            yard_score, yard_na,
+            checklist_score, checklist_na,
+            roof_score, roof_na,
+            fence_score, fence_na,
+            security_score, security_na
+          ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+          ON CONFLICT (substation_name, month, year)
+          DO UPDATE SET
+            status = EXCLUDED.status,
+            findings = EXCLUDED.findings,
+            summary = EXCLUDED.summary,
+            analyzed_at = CURRENT_TIMESTAMP,
+            battery_score = EXCLUDED.battery_score,
+            battery_na = EXCLUDED.battery_na,
+            yard_score = EXCLUDED.yard_score,
+            yard_na = EXCLUDED.yard_na,
+            checklist_score = EXCLUDED.checklist_score,
+            checklist_na = EXCLUDED.checklist_na,
+            roof_score = EXCLUDED.roof_score,
+            roof_na = EXCLUDED.roof_na,
+            fence_score = EXCLUDED.fence_score,
+            fence_na = EXCLUDED.fence_na,
+            security_score = EXCLUDED.security_score,
+            security_na = EXCLUDED.security_na
+        `;
+        const dbResult = await pool.query(q, [
+          substationName, parseInt(month as string), parseInt(year as string), finalAnalysis.status, finalAnalysis.findings, finalAnalysis.summary,
+          finalAnalysis.battery_score, finalAnalysis.battery_na,
+          finalAnalysis.yard_score, finalAnalysis.yard_na,
+          finalAnalysis.checklist_score, finalAnalysis.checklist_na,
+          finalAnalysis.roof_score, finalAnalysis.roof_na,
+          finalAnalysis.fence_score, finalAnalysis.fence_na,
+          finalAnalysis.security_score, finalAnalysis.security_na
+        ]);
+        console.log(`Saved AI Analysis with dynamic weighting to DB for ${substationName}: ${dbResult.rowCount} rows affected`);
       } catch (dbErr) {
         console.error("Failed to save health index to DB:", dbErr);
       }
@@ -1470,17 +1795,30 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
 
 app.get("/api/health-index", async (req, res) => {
   const { month, year } = req.query;
+  const filterMonth = parseInt(month as string);
+  const filterYear = parseInt(year as string);
+
+  try {
+    const list = await getHealthIndexFromSheet();
+    if (list.length > 0) {
+      const filtered = list.filter(item => item.month === filterMonth && item.year === filterYear);
+      return res.json(filtered);
+    }
+  } catch (sheetErr) {
+    console.error("Failed to read health index from Google Sheets database tab:", sheetErr);
+  }
+
   const pool = getDbPool();
   if (!pool) return res.json([]);
 
   try {
     const result = await pool.query(
       "SELECT * FROM health_index_logs WHERE month = $1 AND year = $2",
-      [month, year]
+      [filterMonth, filterYear]
     );
     res.json(result.rows);
   } catch (err) {
-    console.error("Failed to fetch health index:", err);
+    console.error("Failed to fetch health index from Postgres:", err);
     res.status(500).json({ error: "Failed to fetch health index" });
   }
 });
@@ -1497,51 +1835,81 @@ app.post("/api/save-health-audit", async (req: any, res: any) => {
     summary, status 
   } = req.body;
 
-  const pool = getDbPool();
-  if (!pool) return res.status(500).json({ error: "No database pool available" });
+  let sheetSaved = false;
+  let sheetError = null;
 
+  // 1. Try to save to Google Sheets (Primary target based on user's instruction)
   try {
-    const q = `
-      INSERT INTO health_index_logs (
-        substation_name, month, year, status, findings, summary, analyzed_at,
-        battery_score, battery_na,
-        yard_score, yard_na,
-        checklist_score, checklist_na,
-        roof_score, roof_na,
-        fence_score, fence_na,
-        security_score, security_na
-      ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-      ON CONFLICT (substation_name, month, year)
-      DO UPDATE SET
-        status = EXCLUDED.status,
-        summary = EXCLUDED.summary,
-        analyzed_at = CURRENT_TIMESTAMP,
-        battery_score = EXCLUDED.battery_score,
-        battery_na = EXCLUDED.battery_na,
-        yard_score = EXCLUDED.yard_score,
-        yard_na = EXCLUDED.yard_na,
-        checklist_score = EXCLUDED.checklist_score,
-        checklist_na = EXCLUDED.checklist_na,
-        roof_score = EXCLUDED.roof_score,
-        roof_na = EXCLUDED.roof_na,
-        fence_score = EXCLUDED.fence_score,
-        fence_na = EXCLUDED.fence_na,
-        security_score = EXCLUDED.security_score,
-        security_na = EXCLUDED.security_na
-    `;
-    await pool.query(q, [
-      substationName, parseInt(month), parseInt(year), status || 'Green', [], summary || '',
-      battery_score !== undefined ? parseInt(battery_score) : 100, !!battery_na,
-      yard_score !== undefined ? parseInt(yard_score) : 100, !!yard_na,
-      checklist_score !== undefined ? parseInt(checklist_score) : 100, !!checklist_na,
-      roof_score !== undefined ? parseInt(roof_score) : 100, !!roof_na,
-      fence_score !== undefined ? parseInt(fence_score) : 100, !!fence_na,
-      security_score !== undefined ? parseInt(security_score) : 100, !!security_na
-    ]);
-    res.json({ success: true });
+    await saveHealthIndexToSheet({
+      substationName, month, year,
+      status, findings: [], summary,
+      battery_score, battery_na,
+      yard_score, yard_na,
+      checklist_score, checklist_na,
+      roof_score, roof_na,
+      fence_score, fence_na,
+      security_score, security_na
+    });
+    sheetSaved = true;
   } catch (err: any) {
-    console.error("Failed to save health audit:", err);
-    res.status(500).json({ error: "Failed to save health audit: " + err.message });
+    console.error("Failed to save health audit to Google Sheets: database", err);
+    sheetError = err.message || err;
+  }
+
+  // 2. Try to save to Postgres (Secondary/Fallback target)
+  const pool = getDbPool();
+  if (pool) {
+    try {
+      const q = `
+        INSERT INTO health_index_logs (
+          substation_name, month, year, status, findings, summary, analyzed_at,
+          battery_score, battery_na,
+          yard_score, yard_na,
+          checklist_score, checklist_na,
+          roof_score, roof_na,
+          fence_score, fence_na,
+          security_score, security_na
+        ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        ON CONFLICT (substation_name, month, year)
+        DO UPDATE SET
+          status = EXCLUDED.status,
+          summary = EXCLUDED.summary,
+          analyzed_at = CURRENT_TIMESTAMP,
+          battery_score = EXCLUDED.battery_score,
+          battery_na = EXCLUDED.battery_na,
+          yard_score = EXCLUDED.yard_score,
+          yard_na = EXCLUDED.yard_na,
+          checklist_score = EXCLUDED.checklist_score,
+          checklist_na = EXCLUDED.checklist_na,
+          roof_score = EXCLUDED.roof_score,
+          roof_na = EXCLUDED.roof_na,
+          fence_score = EXCLUDED.fence_score,
+          fence_na = EXCLUDED.fence_na,
+          security_score = EXCLUDED.security_score,
+          security_na = EXCLUDED.security_na
+      `;
+      await pool.query(q, [
+        substationName, parseInt(month), parseInt(year), status || 'Green', [], summary || '',
+        battery_score !== undefined ? parseInt(battery_score) : 100, !!battery_na,
+        yard_score !== undefined ? parseInt(yard_score) : 100, !!yard_na,
+        checklist_score !== undefined ? parseInt(checklist_score) : 100, !!checklist_na,
+        roof_score !== undefined ? parseInt(roof_score) : 100, !!roof_na,
+        fence_score !== undefined ? parseInt(fence_score) : 100, !!fence_na,
+        security_score !== undefined ? parseInt(security_score) : 100, !!security_na
+      ]);
+    } catch (dbErr) {
+      console.error("Failed to save health audit to PostgreSQL:", dbErr);
+    }
+  }
+
+  if (sheetSaved) {
+    res.json({ success: true });
+  } else {
+    if (!pool) {
+      res.status(500).json({ error: `ไม่สามารถบันทึกได้: ล้มเหลวจากการเขียนพอร์ตชีต (${sheetError || 'ไม่สามารถเชื่อมต่อ Google Sheets ได้'}) และไม่ได้เชื่อมบริการฐานข้อมูล Postgres` });
+    } else {
+      res.status(500).json({ error: `ไม่สามารถบันทึกได้เนื่องจาก: ${sheetError || 'ข้อผิดพลาดระบบ Google Sheets'}` });
+    }
   }
 });
 
