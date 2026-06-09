@@ -2838,12 +2838,14 @@ export default function App() {
               onLogout={handleLogout}
             />
             {/* Floating Dashboard Button */}
-            <button 
-              onClick={() => setView('dashboard')}
-              className="fixed bottom-6 right-6 w-14 h-14 bg-slate-900 text-white rounded-full shadow-xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-50"
-            >
-              <LayoutDashboard size={24} />
-            </button>
+            {user === '081810' && (
+              <button 
+                onClick={() => setView('dashboard')}
+                className="fixed bottom-6 right-6 w-14 h-14 bg-slate-900 text-white rounded-full shadow-xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-50"
+              >
+                <LayoutDashboard size={24} />
+              </button>
+            )}
           </motion.div>
         )}
 
@@ -2858,7 +2860,7 @@ export default function App() {
           </motion.div>
         )}
 
-        {view === 'dashboard' && (
+        {view === 'dashboard' && user === '081810' && (
           <motion.div key="dashboard" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }}>
             <DashboardPage onBack={() => setView('selection')} />
           </motion.div>
