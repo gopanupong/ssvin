@@ -1852,7 +1852,6 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                         <div className="flex justify-between items-start gap-2">
                           <div>
                             <h4 className="font-bold text-slate-800 text-sm">{sub.name}</h4>
-                            <span className="text-[9px] text-slate-400 font-bold block mt-0.5">สถานีประธานเขตไฟฟ้าแรงสูง</span>
                           </div>
                           {healthRow ? (
                             <div className="flex flex-col items-end gap-1">
