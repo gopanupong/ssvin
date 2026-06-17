@@ -3,7 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Google AI Studio App</title>
+    <title>Smart Substation Visual Inspection (SSVI)</title>
+    <script>
+      (function() {
+        var ua = navigator.userAgent.toLowerCase();
+        if (ua.indexOf('line') > -1) {
+          var url = new URL(window.location.href);
+          if (!url.searchParams.has('openExternalBrowser')) {
+            url.searchParams.set('openExternalBrowser', '1');
+            window.location.href = url.toString();
+          }
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

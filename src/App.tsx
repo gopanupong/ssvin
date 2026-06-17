@@ -10,6 +10,7 @@ import {
   ClipboardCheck, 
   Upload,
   AlertCircle,
+  ExternalLink,
   Loader2,
   Image as ImageIcon,
   FileText,
@@ -2822,6 +2823,19 @@ export default function App() {
   const [user, setUser] = useState<string | null>(localStorage.getItem('ssvi_user'));
   const [view, setView] = useState<'selection' | 'inspection' | 'dashboard' | 'success'>('selection');
   const [selectedSub, setSelectedSub] = useState<typeof SUBSTATIONS[0] | null>(null);
+  const [isLineBrowser, setIsLineBrowser] = useState(false);
+
+  useEffect(() => {
+    const ua = navigator.userAgent.toLowerCase();
+    if (ua.includes('line')) {
+      setIsLineBrowser(true);
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has('openExternalBrowser')) {
+        url.searchParams.set('openExternalBrowser', '1');
+        window.location.href = url.toString();
+      }
+    }
+  }, []);
 
   const handleLogin = (id: string) => {
     localStorage.setItem('ssvi_user', id);
@@ -2833,6 +2847,61 @@ export default function App() {
     setUser(null);
     setView('selection');
   };
+
+  if (isLineBrowser) {
+    const extUrl = window.location.href + (window.location.href.includes('?') ? '&' : '?') + 'openExternalBrowser=1';
+    return (
+      <div className="fixed inset-0 z-[1000] bg-slate-900 flex flex-col items-center justify-center p-6 text-white text-center select-none font-sans overflow-y-auto">
+        <div className="w-full max-w-md bg-slate-800/80 border border-slate-700/60 p-8 rounded-3xl shadow-2xl flex flex-col items-center gap-6 relative">
+          <div className="w-20 h-20 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-center justify-center relative animate-pulse animate-duration-1000">
+            <Camera className="text-amber-400 w-10 h-10" />
+            <div className="absolute -top-1 -right-1 bg-amber-500 rounded-full p-1 border-2 border-slate-800">
+              <ExternalLink className="text-slate-900 w-3 h-3" />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <h2 className="text-xl font-bold text-amber-400">⚠️ จำกัดการถ่ายภาพจริงหน้างานเท่านั้น</h2>
+            <p className="text-slate-300 text-sm leading-relaxed">
+              สืบเนื่องจากนโยบายป้องกันการเปิดรูปจากแกลเลอรี หรือแอบอ้างส่งรูปจากอัลบั้มบันทึกเก่า ระบบจึงถูกตั้งค่ารับเฉพาะการ "ถ่ายรูปสด" เท่านั้น
+            </p>
+          </div>
+
+          <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-700/30 text-left w-full space-y-3">
+            <span className="text-xs font-bold text-slate-400 block border-b border-slate-800 pb-1.5">
+              📌 ขั้นตอนการใช้งานผ่านเบราว์เซอร์ของระบบ:
+            </span>
+            <ul className="text-xs text-slate-300 space-y-2.5 list-none pl-1">
+              <li className="flex gap-2 items-start">
+                <span className="bg-amber-500/20 text-amber-400 w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] shrink-0">1</span>
+                <span>ระบบกำลังพยายามสลับไปรันเบราว์เซอร์หลักของเครื่องท่านโดยอัตโนมัติ...</span>
+              </li>
+              <li className="flex gap-2 items-start">
+                <span className="bg-slate-700 text-slate-300 w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] shrink-0">2</span>
+                <span>หากเครื่องไม่ปิดหน้านี้เองโดยอัตโนมัติ กรุณากดปุ่ม <strong className="text-amber-400">"เปิดด้วย Chrome / Safari"</strong> ด้านล่าง</span>
+              </li>
+              <li className="flex gap-2 items-start">
+                <span className="bg-slate-700 text-slate-300 w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] shrink-0">3</span>
+                <span>หรือแตะที่ปุ่ม <strong className="text-white font-mono">...</strong> ที่มุมบนขวาในแอป LINE จากนั้นเลือก <strong>"เปิดเบราว์เซอร์ภายนอก"</strong></span>
+              </li>
+            </ul>
+          </div>
+
+          <a 
+            href={extUrl}
+            className="w-full bg-violet-600 hover:bg-violet-700 text-white py-3.5 px-6 rounded-2xl font-bold text-sm tracking-wide transition-all shadow-xl shadow-slate-950/40 active:scale-[0.98] flex items-center justify-center gap-2"
+          >
+            <ExternalLink size={18} />
+            เปิดด้วย Chrome / Safari (ตรวจรับภาพสด)
+          </a>
+
+          <p className="text-[10px] text-slate-500 italic">
+            * เพื่อการดึงพิกัด GPS ได้เสถียรและเรียกกล้องถ่ายสดได้ถูกต้อง 100%
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (!user) return <LoginPage onLogin={handleLogin} />;
 
