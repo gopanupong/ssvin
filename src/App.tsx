@@ -456,31 +456,34 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
           ctx.font = `bold ${fontSize}px sans-serif`;
           const timestamp = format(new Date(), 'dd/MM/yyyy HH:mm:ss', { locale: th });
           
-          // Draw Timestamp (Bottom Right)
-          const tsWidth = ctx.measureText(timestamp).width;
-          const tsX = canvas.width - tsWidth - 20;
-          const tsY = canvas.height - 20;
+          // Create multi-line watermark array from bottom to top
+          const lines = [
+            { text: `เวลาถ่าย: ${timestamp}`, color: 'white' },
+            { 
+              text: `พิกัด: ${location ? `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}` : 'ไม่มีข้อมูล GPS'}`, 
+              color: '#38bdf8' 
+            },
+            { text: `รหัสผู้ตรวจ: ${employeeId}`, color: '#a78bfa' }
+          ];
 
-          // Draw Comment (Above Timestamp) if exists
           if (comment) {
-            const commentText = comment;
-            const cWidth = ctx.measureText(commentText).width;
-            const cX = canvas.width - cWidth - 20;
-            const cY = tsY - fontSize - 8; // Position above timestamp with a small gap
-
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = 4;
-            ctx.strokeText(commentText, cX, cY);
-            ctx.fillStyle = '#fde047'; // Yellow for comment
-            ctx.fillText(commentText, cX, cY);
+            lines.push({ text: `บันทึก: ${comment}`, color: '#fde047' });
           }
 
-          // Draw Timestamp
-          ctx.strokeStyle = 'black';
-          ctx.lineWidth = 4;
-          ctx.strokeText(timestamp, tsX, tsY);
-          ctx.fillStyle = 'white';
-          ctx.fillText(timestamp, tsX, tsY);
+          // Draw text lines starting from the bottom going upwards
+          let currentY = canvas.height - 20;
+          lines.forEach((line) => {
+            const textWidth = ctx.measureText(line.text).width;
+            const textX = canvas.width - textWidth - 20;
+
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = Math.max(3, Math.floor(fontSize / 6));
+            ctx.strokeText(line.text, textX, currentY);
+            ctx.fillStyle = line.color;
+            ctx.fillText(line.text, textX, currentY);
+
+            currentY -= (fontSize + 8);
+          });
 
           canvas.toBlob((blob) => {
             if (blob) resolve(blob);
@@ -809,6 +812,10 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                           <div key={i} className="bg-slate-50 p-3 rounded-2xl border border-slate-100 space-y-3">
                             <div className="aspect-video bg-slate-200 rounded-xl overflow-hidden relative group shadow-inner">
                               <img src={URL.createObjectURL(item.file)} className="w-full h-full object-cover" />
+                              <div className="absolute bottom-2 left-2 bg-slate-900/85 backdrop-blur-sm text-white text-[8px] px-2 py-1.5 rounded-xl font-mono flex flex-col gap-0.5 max-w-[80%] shadow-md border border-white/10">
+                                <span className="flex items-center gap-1 font-semibold">👤 {employeeId}</span>
+                                <span className="flex items-center gap-1 font-semibold text-sky-300">📍 {location ? `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}` : 'กำลังระบุพิกัด GPS...'}</span>
+                              </div>
                               <button 
                                 onClick={() => setPhotos(prev => ({
                                   ...prev,
@@ -861,9 +868,13 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                 {checklists.map((file, i) => (
                   <div key={i} className="aspect-square bg-slate-200 rounded-2xl overflow-hidden relative group shadow-inner">
                     <img src={URL.createObjectURL(file)} className="w-full h-full object-cover" />
+                    <div className="absolute bottom-1 left-1 right-1 bg-slate-900/85 backdrop-blur-sm text-white text-[7px] p-1 rounded-lg font-mono flex flex-col gap-0.5 shadow-sm border border-white/5">
+                      <span className="truncate">👤 {employeeId}</span>
+                      <span className="truncate text-sky-300">📍 {location ? `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}` : 'GPS...'}</span>
+                    </div>
                     <button 
                       onClick={() => setChecklists(prev => prev.filter((_, idx) => idx !== i))}
-                      className="absolute top-1 right-1 w-6 h-6 bg-rose-500/90 backdrop-blur-sm text-white rounded-full flex items-center justify-center shadow-lg text-xs active:scale-75 transition-all"
+                      className="absolute top-1 right-1 w-6 h-6 bg-rose-500/90 backdrop-blur-sm text-white rounded-full flex items-center justify-center shadow-lg text-xs active:scale-75 transition-all z-10"
                     >
                       <Plus size={14} className="rotate-45" />
                     </button>
