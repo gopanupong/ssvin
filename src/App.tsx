@@ -854,16 +854,32 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
           </section>
 
           <section className="bg-white p-5 rounded-3xl border border-slate-100 shadow-md shadow-slate-200/50">
-            <div className="flex justify-between items-start mb-2">
-              <div className="flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-violet-600 animate-pulse" />
-                <p className="text-sm font-bold text-slate-900 uppercase tracking-tight">กระดาษ Check List (A4)</p>
+            <div className="flex justify-between items-start gap-4 mb-4">
+              <div className="flex-1 space-y-1">
+                <div className="flex items-center gap-3">
+                  <div className="w-2 h-2 rounded-full bg-violet-600 animate-pulse" />
+                  <h4 className="font-bold text-base text-slate-900 uppercase tracking-tight">กระดาษ Check List (A4)</h4>
+                </div>
+                <p className="text-xs text-slate-500 leading-relaxed">ถ่ายกระดาษ Check List ทุกหน้าให้ครบถ้วน</p>
               </div>
-              <span className="text-[10px] font-black text-violet-600 bg-violet-50 px-2 py-1 rounded-full border border-violet-100">
-                {checklists.length} แผ่น
-              </span>
+
+              <div className="flex flex-col items-end gap-3">
+                <span className="text-[10px] font-black text-violet-600 bg-violet-50 px-2 py-1 rounded-full border border-violet-100">
+                  {checklists.length} แผ่น
+                </span>
+                <label className="bg-violet-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 active:scale-90 transition-all cursor-pointer shadow-lg shadow-violet-200">
+                  <Camera size={16} />
+                  <span>ถ่ายภาพ</span>
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    capture="environment" 
+                    className="hidden" 
+                    onChange={(e) => onFileChange(e, 'checklist')} 
+                  />
+                </label>
+              </div>
             </div>
-            <p className="text-xs text-slate-500 mb-5 leading-relaxed">ถ่ายกระดาษ Check List ทุกหน้าให้ครบถ้วน</p>
             
             <div className="grid grid-cols-3 gap-3">
                 {checklists.map((file, i) => (
