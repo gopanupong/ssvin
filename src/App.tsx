@@ -541,51 +541,89 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
       }).replace(/\//g, "");
       const nameSuffix = `${timeStr}_${dateStr}`;
 
-      // 1. Initialize Upload (Get Token and Folder ID)
-      const initRes = await fetch('/api/init-upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ substationName: substation.name, timestamp: now.toISOString() })
-      });
+      // 1. Initialize Upload (Get Token and Folder ID) with retries
+      let initRes: Response | null = null;
+      const initMaxAttempts = 3;
+      for (let attempt = 1; attempt <= initMaxAttempts; attempt++) {
+        try {
+          initRes = await fetch('/api/init-upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ substationName: substation.name, timestamp: now.toISOString() })
+          });
+          if (initRes.ok) break;
+        } catch (e: any) {
+          console.warn(`Init upload attempt ${attempt} failed:`, e);
+          if (attempt === initMaxAttempts) throw e;
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
       
-      if (!initRes.ok) {
-        const errData = await initRes.json();
-        throw new Error(errData.error || 'Failed to initialize upload');
+      if (!initRes || !initRes.ok) {
+        const errText = initRes ? await initRes.text() : 'Failed to connect to server';
+        let errDesc = 'Failed to initialize upload';
+        try {
+          const errData = JSON.parse(errText);
+          errDesc = errData.error || errDesc;
+        } catch(e) {}
+        throw new Error(errDesc);
       }
       
       const { accessToken, folderId } = await initRes.json();
       const categoriesInSubmission = new Set<string>();
 
-      // Helper to upload directly to Google Drive
-      const uploadToDrive = async (blob: Blob, filename: string) => {
+      // Helper to upload directly to Google Drive with automatic retries (up to 4 attempts)
+      const uploadToDrive = async (blob: Blob, filename: string, itemIndex: number, total: number) => {
         const metadata = {
           name: filename,
           parents: [folderId]
         };
 
-        const formData = new FormData();
-        formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-        formData.append('file', blob);
+        const maxAttempts = 4;
+        let lastError: any = null;
 
-        const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          },
-          body: formData
-        });
-
-        if (!response.ok) {
-          let errorMsg = response.statusText;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
           try {
-            const errorData = await response.json();
-            errorMsg = errorData.error?.message || response.statusText;
-          } catch (e) {
-            // Ignore if not JSON
+            if (attempt > 1) {
+              setStatus(`กำลังส่งรูปที่ ${itemIndex}/${total}... (ลองใหม่รอบที่ ${attempt}/${maxAttempts})`);
+            } else {
+              setStatus(`กำลังส่งรูปที่ ${itemIndex}/${total}...`);
+            }
+
+            const formData = new FormData();
+            formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+            formData.append('file', blob);
+
+            const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${accessToken}`
+              },
+              body: formData
+            });
+
+            if (!response.ok) {
+              let errorMsg = response.statusText;
+              try {
+                const errorData = await response.json();
+                errorMsg = errorData.error?.message || response.statusText;
+              } catch (e) {
+                // Ignore if not JSON
+              }
+              throw new Error(`Drive upload failed (${response.status}): ${errorMsg}`);
+            }
+            return await response.json();
+          } catch (err: any) {
+            console.warn(`Attempt ${attempt} of ${maxAttempts} failed for ${filename}:`, err);
+            lastError = err;
+            if (attempt < maxAttempts) {
+              // Wait with exponential backoff (1.5s, 2.2s, 3.3s, ...) before retrying
+              const delay = 1500 * Math.pow(1.5, attempt - 1);
+              await new Promise(resolve => setTimeout(resolve, delay));
+            }
           }
-          throw new Error(`Drive upload failed (${response.status}): ${errorMsg}`);
         }
-        return await response.json();
+        throw lastError || new Error(`Failed to upload ${filename} after ${maxAttempts} attempts`);
       };
 
       const compressionOptions = {
@@ -612,7 +650,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
           const processedFile = new File([processedBlob], 'temp.jpg', { type: 'image/jpeg' });
           const compressedBlob = await imageCompression(processedFile, compressionOptions);
           
-          await uploadToDrive(compressedBlob, `${key}_${i + 1}_${nameSuffix}.jpg`);
+          await uploadToDrive(compressedBlob, `${key}_${i + 1}_${nameSuffix}.jpg`, currentCount, totalPhotos);
         }
       }
       
@@ -626,34 +664,53 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
         const processedFile = new File([processedBlob], 'temp.jpg', { type: 'image/jpeg' });
         const compressedBlob = await imageCompression(processedFile, compressionOptions);
         
-        await uploadToDrive(compressedBlob, `checklist_${i + 1}_${nameSuffix}.jpg`);
+        await uploadToDrive(compressedBlob, `checklist_${i + 1}_${nameSuffix}.jpg`, currentCount, totalPhotos);
       }
 
-      // 3. Finalize: Log to DB and Sheets
+      // 3. Finalize: Log to DB and Sheets with retries
       setStatus('กำลังบันทึกข้อมูลรายงาน...');
-      const finalizeRes = await fetch('/api/complete-upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          employeeId,
-          substationName: substation.name,
-          lat: location?.lat || 0,
-          lng: location?.lng || 0,
-          timestamp: now.toISOString(),
-          folderId,
-          categories: Array.from(categoriesInSubmission).join(',')
-        })
-      });
+      let finalizeRes: Response | null = null;
+      const finalizeMaxAttempts = 4;
+      for (let attempt = 1; attempt <= finalizeMaxAttempts; attempt++) {
+        try {
+          if (attempt > 1) {
+            setStatus(`กำลังบันทึกหน้างาน... (รอบที่ ${attempt}/${finalizeMaxAttempts})`);
+          }
+          finalizeRes = await fetch('/api/complete-upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              employeeId,
+              substationName: substation.name,
+              lat: location?.lat || 0,
+              lng: location?.lng || 0,
+              timestamp: now.toISOString(),
+              folderId,
+              categories: Array.from(categoriesInSubmission).join(',')
+            })
+          });
+          if (finalizeRes.ok) break;
+        } catch (e: any) {
+          console.warn(`Finalize attempt ${attempt} failed:`, e);
+          if (attempt === finalizeMaxAttempts) throw e;
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+      }
 
-      if (finalizeRes.ok) {
+      if (finalizeRes && finalizeRes.ok) {
         onComplete();
       } else {
-        const errData = await finalizeRes.json();
-        alert(`บันทึกข้อมูลไม่สำเร็จ: ${errData.error}`);
+        const errText = finalizeRes ? await finalizeRes.text() : 'Timeout or connection failed';
+        let errorMsg = 'Failed to save audit details';
+        try {
+          const errData = JSON.parse(errText);
+          errorMsg = errData.error || errorMsg;
+        } catch(e) {}
+        alert(`บันทึกข้อมูลไม่สำเร็จ: ${errorMsg}`);
       }
     } catch (err: any) {
       console.error(err);
-      alert(`เกิดข้อผิดพลาด: ${err.message}`);
+      alert(`เกิดข้อผิดพลาด: ${err.message === 'Failed to fetch' ? 'Failed to fetch (สัญญาณเน็ตไม่เสถียร กรุณาลองใหม่อีกครั้ง)' : err.message}`);
     } finally {
       setUploading(false);
       isSubmitting.current = false;
