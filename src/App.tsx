@@ -791,11 +791,33 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">จุดตรวจสอบมาตรฐาน (Fixed-Point)</p>
             <div className="space-y-6">
               {[
-                { id: 'fence', label: 'รั้วสถานี', desc: 'ถ่ายภาพ ให้เห็นรั้วทั้ง 4 ด้าน จะมีอย่างน้อย 4 รูป', mandatory: true },
-                { id: 'battery', label: 'แบตเตอรี่', desc: 'ถ่ายภาพรวม 1 รูป , ถ่ายเจาะจงให้เห็นระดับสูง-ต่ำ น้ำกลั่น อย่างน้อย 1 รูป', mandatory: true },
-                { id: 'yard', label: 'ลานไก', desc: 'ถ่ายภาพรวม , ถ่ายมุมกว้าง ให้เห็นพื้นลานไกทั้งหมด' },
-                { id: 'roof', label: 'ดาดฟ้า', desc: 'ถ้าขึ้นได้, ถ่ายภาพรวม , ถ่ายมุมกว้าง ให้เห็นพื้น ท่อระบายน้ำต่างๆ' },
-                { id: 'security', label: 'รปภ.', desc: 'ถ้าสฟ. มี รปภ. ให้ถ่ายรูปการแต่งกายของ รปภ. (ถ้าไม่มีให้ปิดหัวข้อไว้ ไม่ต้องถ่าย)' },
+                { 
+                  id: 'fence', 
+                  label: 'รั้วสถานีฯ', 
+                  desc: 'ให้ถ่ายภาพรั้วของสถานีฯ ให้ครบทั้ง 4 ด้าน (ด้านหน้า, ด้านหลัง, ด้านซ้าย และด้านขวา) โดยต้องมีภาพประกอบ อย่างน้อย 4 รูป', 
+                  mandatory: true 
+                },
+                { 
+                  id: 'battery', 
+                  label: 'แบตเตอรี่', 
+                  desc: 'ให้ถ่ายภาพรวมและภาพเจาะจง ดังนี้\n• ถ่ายภาพรวม: ให้เห็นชุดแบตเตอรี่ทั้งหมด (1 รูป)\n• ถ่ายภาพเจาะจง: ถ่ายแบตเตอรี่ 1 ลูก ให้เห็นขีดบอกระดับน้ำกลั่น (ระดับสูง-ต่ำ) อย่างชัดเจน (1 รูป)', 
+                  mandatory: true 
+                },
+                { 
+                  id: 'yard', 
+                  label: 'ลานไก', 
+                  desc: 'ให้ถ่ายภาพจากหลายๆ มุม (มากกว่า 1 รูป) โดยภาพจะต้องครอบคลุมรายละเอียด ดังนี้:\n• สภาพของอุปกรณ์ต่างๆ ภายในลานไก\n• สภาพพื้นของลานไกในภาพรวมทั้งหมด' 
+                },
+                { 
+                  id: 'roof', 
+                  label: 'ดาดฟ้า', 
+                  desc: '• กรณีที่ขึ้นได้และปลอดภัย: ให้ถ่ายภาพรวมมุมกว้าง เพื่อให้เห็นสภาพพื้นดาดฟ้าและจุดของท่อระบายน้ำต่างๆ\n• กรณีไม่มีดาดฟ้า ทางขึ้นลำบาก หรือเสี่ยงต่อการพลัดตก: ให้ข้ามและปิดหัวข้อนี้ได้เลย (ไม่ต้องถ่ายภาพ) โดยให้คำนึงถึงความปลอดภัยของผู้ปฏิบัติงานเป็นหลัก' 
+                },
+                { 
+                  id: 'security', 
+                  label: 'รปภ.', 
+                  desc: '• กรณีที่ สฟ. มี รปภ.: ให้ถ่ายภาพการแต่งกายของ รปภ. ในขณะปฏิบัติหน้าที่ และถ่ายภาพหน้าสมุดบันทึกการเข้า-ออก (สมุดตรวจเยี่ยมที่ป้อม) ของสถานีฯ\n• กรณีที่ สฟ. ไม่มี รปภ.: ให้ข้ามและปิดหัวข้อนี้ได้เลย (ไม่ต้องถ่ายภาพ)' 
+                },
               ].map((point) => {
                 const isMandatory = (point as any).mandatory;
                 const isEnabled = isMandatory || enabledCategories.includes(point.id);
@@ -821,9 +843,11 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                             </span>
                           )}
                         </div>
-                        <p className={cn("text-xs leading-relaxed", isEnabled ? "text-slate-500" : "text-slate-400")}>
-                          {point.desc}
-                        </p>
+                        <div className={cn("text-xs leading-relaxed space-y-1.5", isEnabled ? "text-slate-500" : "text-slate-400")}>
+                          {point.desc.split('\n').map((line, idx) => (
+                            <p key={idx}>{line}</p>
+                          ))}
+                        </div>
                       </div>
 
                       <div className="flex flex-col items-end gap-3">
@@ -917,7 +941,11 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                   <div className="w-2 h-2 rounded-full bg-violet-600 animate-pulse" />
                   <h4 className="font-bold text-base text-slate-900 uppercase tracking-tight">กระดาษ Check List (A4)</h4>
                 </div>
-                <p className="text-xs text-slate-500 leading-relaxed">ถ่ายกระดาษ Check List ทุกหน้าให้ครบถ้วน</p>
+                <div className="text-xs text-slate-500 leading-relaxed space-y-1">
+                  {"ให้จัดหน้ากระดาษให้ตรง และถ่ายภาพให้เห็นข้อความหรือรอยขีดเขียนอย่างชัดเจน เพื่อให้อ่านรายละเอียดข้อมูลได้ครบถ้วน โดยมีรายการที่ต้องถ่ายดังนี้\n• กระดาษ Check List (A4): ถ่ายภาพ ให้ครบทุกหน้า (ถ่ายหน้าละ 1 รูป)\n• สมุดตรวจเยี่ยมและการเข้าปฏิบัติงานสถานีฯ: ถ่ายภาพ หน้าล่าสุด ที่มีการลงบันทึก (1 รูป)".split('\n').map((line, idx) => (
+                    <p key={idx}>{line}</p>
+                  ))}
+                </div>
               </div>
 
               <div className="flex flex-col items-end gap-3">
