@@ -628,7 +628,7 @@ app.get("/api/drive/folder/:folderId/images", async (req: any, res: any) => {
 
 // Analyze a single image
 app.post("/api/analyze-image", async (req: any, res: any) => {
-  const { fileId, fileName, folderId, mimeType } = req.body;
+  const { fileId, fileName, folderId, mimeType, force } = req.body;
   const driveService = getDriveService();
   const apiKey = process.env.GEMINI_API_KEY;
 
@@ -641,11 +641,13 @@ app.post("/api/analyze-image", async (req: any, res: any) => {
 
   try {
     // 0. Check history first to avoid re-analysis
-    const history = await getAnalysisHistory();
-    const existing = history.find(h => h.fileId === fileId);
-    if (existing) {
-      console.log(`Image ${fileName} already analyzed, returning cached result.`);
-      return res.json(existing);
+    if (!force) {
+      const history = await getAnalysisHistory();
+      const existing = [...history].reverse().find(h => h.fileId === fileId);
+      if (existing) {
+        console.log(`Image ${fileName} already analyzed, returning cached result.`);
+        return res.json(existing);
+      }
     }
 
     // 1. Download image
@@ -1371,6 +1373,9 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
   const driveService = getDriveService();
   const apiKey = process.env.GEMINI_API_KEY;
 
+  // Clear historyCache so we pull fresh individual analysis results
+  historyCache = null;
+
   if (!apiKey) {
     return res.status(500).json({ error: "ยังไม่ได้ตั้งค่า GEMINI_API_KEY ในระบบ" });
   }
@@ -1380,7 +1385,7 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
 
   try {
     // Check if already analyzed in Google Sheets first, then DB to avoid redundant calls if not forced
-    if (!force && !dryRun) {
+    if (!force && !dryRun && !req.body.reaggregate) {
       try {
         const list = await getHealthIndexFromSheet();
         const existing = list.find(h => h.substation_name === substationName && h.month === parseInt(month) && h.year === parseInt(year));
@@ -1564,7 +1569,7 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
         try {
           // Check if already analyzed in history (only if not forced)
           if (!force) {
-            const existing = history.find(h => h.fileId === img.id);
+            const existing = [...history].reverse().find(h => h.fileId === img.id);
             if (existing) {
               console.log(`Image ${img.name} already analyzed, using cached result.`);
               return existing;

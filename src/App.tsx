@@ -160,6 +160,11 @@ const SelectionPage = ({ onSelect, onLogout }: { onSelect: (sub: typeof SUBSTATI
   };
 
   useEffect(() => {
+    if (!navigator || !navigator.geolocation) {
+      console.warn("Geolocation is not supported by this browser.");
+      setLoading(false);
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
@@ -180,7 +185,7 @@ const SelectionPage = ({ onSelect, onLogout }: { onSelect: (sub: typeof SUBSTATI
         setLoading(false);
       },
       (err) => {
-        console.error("Geolocation error:", err);
+        console.warn("Location detection skipped or denied:", err.message);
         setLoading(false);
       },
       { enableHighAccuracy: true }
@@ -344,7 +349,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
         console.log("Location captured:", pos.coords.latitude, pos.coords.longitude);
       },
       (err) => {
-        console.error("Geolocation error:", err);
+        console.warn("Location capture skipped or denied:", err.message);
         let msg = "ไม่สามารถระบุตำแหน่งได้";
         if (err.code === 1) msg = "กรุณาอนุญาตการเข้าถึงตำแหน่ง (GPS)";
         else if (err.code === 2) msg = "ไม่พบสัญญาณ GPS";
@@ -513,6 +518,10 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
       setStatus('กำลังระบุตำแหน่ง GPS...');
       try {
         await new Promise((resolve, reject) => {
+          if (!navigator || !navigator.geolocation) {
+            reject(new Error("No geolocation support"));
+            return;
+          }
           navigator.geolocation.getCurrentPosition(
             (pos) => {
               const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
@@ -1069,6 +1078,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   const [activeTab, setActiveTab] = useState<'progress' | 'health'>('progress');
   const [healthIndex, setHealthIndex] = useState<any[]>([]);
   const [analyzing, setAnalyzing] = useState<string | null>(null);
+  const [analyzingStatus, setAnalyzingStatus] = useState<string>("");
   const [selectedSubstationForAnalysis, setSelectedSubstationForAnalysis] = useState<string | null>(null);
   const [imagesInFolder, setImagesInFolder] = useState<any[]>([]);
   const [isFetchingImages, setIsFetchingImages] = useState(false);
@@ -1278,21 +1288,113 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
     fetchHealthIndex();
   }, [selectedMonth, selectedYear]);
 
-  const handleAnalyze = async (substationName: string, force = false) => {
-    setAnalyzing(substationName);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutes
+  const runQueueAnalysis = async (substationName: string, force = false, onProgress: (statusText: string) => void) => {
+    // 1. Dry run to get Folder ID
+    onProgress("ค้นหาโฟลเดอร์...");
+    const dryRunRes = await fetch('/api/analyze-substation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ substationName, month: selectedMonth + 1, year: selectedYear, dryRun: true })
+    });
     
-    try {
-      const res = await fetch('/api/analyze-substation', {
+    if (!dryRunRes.ok) {
+      const err = await dryRunRes.json();
+      throw new Error(err.error || "เกิดข้อผิดพลาดในการหาโฟลเดอร์");
+    }
+    
+    const dryRunData = await dryRunRes.json();
+    const folderId = dryRunData.folderId;
+    
+    if (!folderId) {
+      // No folder/data available.
+      // The server already saved the "No Data" result on dryrun.
+      // Let's call the server without dryRun to fetch that state.
+      const noDataRes = await fetch('/api/analyze-substation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ substationName, month: selectedMonth + 1, year: selectedYear, force }),
-        signal: controller.signal
+        body: JSON.stringify({ substationName, month: selectedMonth + 1, year: selectedYear, force: false })
       });
-      clearTimeout(timeoutId);
-      const data = await res.json();
-      console.log("Analysis result:", data);
+      return await noDataRes.json();
+    }
+    
+    // 2. Fetch images in the folder
+    onProgress("ดึงรูปภาพ...");
+    const imagesRes = await fetch(`/api/drive/folder/${folderId}/images`);
+    if (!imagesRes.ok) {
+      throw new Error("ไม่สามารถดึงรูปภาพจาก Google Drive ได้");
+    }
+    const images = await imagesRes.json();
+    
+    if (!images || images.length === 0) {
+      // No images. Let's call the server to finalize the "No Image" state.
+      const noImageRes = await fetch('/api/analyze-substation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ substationName, month: selectedMonth + 1, year: selectedYear, force: false })
+      });
+      return await noImageRes.json();
+    }
+    
+    // 3. Queue up the images to analyze
+    // If not forced, only analyze images that don't have a valid analysis result
+    const toAnalyze = force ? images : images.filter((img: any) => !img.analysis || img.analysis.error);
+    
+    if (toAnalyze.length > 0) {
+      let count = 0;
+      for (const img of toAnalyze) {
+        count++;
+        onProgress(`วิเคราะห์รูป ${count}/${toAnalyze.length}`);
+        
+        try {
+          const resImg = await fetch('/api/analyze-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fileId: img.id,
+              fileName: img.name,
+              folderId,
+              mimeType: img.mimeType,
+              force
+            })
+          });
+          
+          if (!resImg.ok) {
+            console.warn(`Failed to analyze image ${img.name}: ${resImg.statusText}`);
+          }
+        } catch (imgErr) {
+          console.error(`Error analyzing image ${img.name}:`, imgErr);
+        }
+        
+        // Wait 1.5 seconds between images to prevent API rate limiting and let things breathe
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
+    }
+    
+    // 4. Run the final aggregation
+    onProgress("ประมวลผลสรุป...");
+    const finalRes = await fetch('/api/analyze-substation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ substationName, month: selectedMonth + 1, year: selectedYear, force: false, reaggregate: true })
+    });
+    
+    if (!finalRes.ok) {
+      const err = await finalRes.json();
+      throw new Error(err.error || "ไม่สามารถสรุปผลการวิเคราะห์ได้");
+    }
+    
+    return await finalRes.json();
+  };
+
+  const handleAnalyze = async (substationName: string, force = false) => {
+    setAnalyzing(substationName);
+    setAnalyzingStatus("เริ่มต้น...");
+    
+    try {
+      const data = await runQueueAnalysis(substationName, force, (status) => {
+        setAnalyzingStatus(status);
+      });
+      
       if (data.error) {
         let errorMessage = data.error;
         if (typeof data.error === 'object' && data.error.code === 503) {
@@ -1308,27 +1410,22 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
         fetchHealthIndex();
       }
     } catch (err: any) {
-      clearTimeout(timeoutId);
-      if (err.name === 'AbortError') {
-        alert("การวิเคราะห์ใช้เวลานานเกินไป (เกิน 10 นาที) กรุณาตรวจสอบผลลัพธ์ในภายหลัง หรือใช้วิธีวิเคราะห์ทีละภาพ");
-      } else {
-        console.error(err);
-        alert("เกิดข้อผิดพลาดในการวิเคราะห์");
-      }
+      console.error(err);
+      alert(`เกิดข้อผิดพลาดในการวิเคราะห์: ${err.message}`);
     } finally {
       setAnalyzing(null);
+      setAnalyzingStatus("");
     }
   };
 
   const handleModalAutoEvaluate = async (substationName: string) => {
     setIsRerunningAI(true);
+    setAnalyzingStatus("เริ่มต้น...");
     try {
-      const res = await fetch('/api/analyze-substation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ substationName, month: selectedMonth + 1, year: selectedYear, force: true })
+      const data = await runQueueAnalysis(substationName, true, (status) => {
+        setAnalyzingStatus(status);
       });
-      const data = await res.json();
+      
       if (data.error) {
         alert(data.error);
       } else {
@@ -1351,11 +1448,12 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
         });
         fetchHealthIndex();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("ไม่สามารถติดต่อเซิร์ฟเวอร์เพื่อวิเคราะห์ด้วย AI ได้");
+      alert(`ไม่สามารถวิเคราะห์ด้วย AI ได้: ${err.message}`);
     } finally {
       setIsRerunningAI(false);
+      setAnalyzingStatus("");
     }
   };
 
@@ -2051,12 +2149,15 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
 
                           <Button 
                             onClick={() => handleAnalyze(sub.name, !!healthRow)} 
-                            disabled={isAnalyzing}
-                            className="py-1.5 text-[10px] font-bold inline-flex items-center justify-center gap-0.5 cursor-pointer"
+                            disabled={analyzing !== null}
+                            className="py-1.5 text-[10px] font-bold inline-flex items-center justify-center cursor-pointer min-h-[36px]"
                             variant="outline"
                           >
                             {isAnalyzing ? (
-                              <><Loader2 className="animate-spin w-3 h-3" /> รอดำเนินการ</>
+                              <div className="flex flex-col items-center justify-center leading-none">
+                                <span className="inline-flex items-center gap-0.5 text-[10px] text-violet-600 font-bold"><Loader2 className="animate-spin w-2.5 h-2.5" /> วิเคราะห์</span>
+                                <span className="text-[8px] font-medium text-slate-500 mt-0.5 truncate max-w-[80px]">{analyzingStatus}</span>
+                              </div>
                             ) : (
                               <>วิเคราะห์ AI</>
                             )}
@@ -2504,7 +2605,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
                         {isRerunningAI ? (
                           <>
                             <Loader2 className="animate-spin w-3 h-3" />
-                            <span>กำลังประเมินด้วย AI...</span>
+                            <span>กำลังประเมินด้วย AI ({analyzingStatus})...</span>
                           </>
                         ) : (
                           <>
