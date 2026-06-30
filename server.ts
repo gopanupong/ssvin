@@ -1219,6 +1219,104 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
   }
 });
 
+app.get("/api/substation-history", async (req: any, res: any) => {
+  const { substationName } = req.query;
+  if (!substationName) {
+    return res.status(400).json({ error: "กรุณาระบุชื่อสถานีไฟฟ้า" });
+  }
+
+  const sheetsService = getSheetsService();
+  const sheetId = process.env.GOOGLE_SHEET_ID || "1WpvuQnhXzufiBmSRSaEnkRFs9BJf5H4fIWZ0xoYC8iw";
+
+  if (!sheetsService) {
+    return res.json({ history: [], error: "ยังไม่ได้เชื่อมต่อ Google Sheets หรือขาด Refresh Token" });
+  }
+  if (!sheetId) {
+    return res.json({ history: [], error: "ยังไม่ได้ตั้งค่า GOOGLE_SHEET_ID ในระบบ" });
+  }
+
+  try {
+    const response = await sheetsService.spreadsheets.values.get({
+      spreadsheetId: sheetId,
+      range: "A2:Q", // Fetch all columns including categories (A to Q)
+    });
+
+    const rows = response.data.values || [];
+    const nameToMatch = (substationName as string).trim();
+
+    const history = rows.map((row) => {
+      const dateStr = (row[0] || "").toString().trim();
+      if (!dateStr) return null;
+
+      const subName = (row[2] || "").toString().trim();
+      if (subName.toLowerCase() !== nameToMatch.toLowerCase()) return null;
+
+      // Robust parsing for dates like "03/03/2569 21:38:00" or "03/03/26 21:38"
+      const parts = dateStr.split(/[\s/:]+/);
+      if (parts.length < 3) return null;
+      
+      const day = parseInt(parts[0]);
+      const monthIdx = parseInt(parts[1]) - 1;
+      let yearVal = parseInt(parts[2]);
+
+      if (yearVal < 100) {
+        if (yearVal > 50) yearVal += 2500;
+        else yearVal += 2000;
+      }
+      if (yearVal > 2500) yearVal -= 543;
+
+      const hour = parseInt(parts[3]) || 0;
+      const minute = parseInt(parts[4]) || 0;
+      const second = parseInt(parts[5]) || 0;
+
+      const isoStr = `${yearVal}-${String(monthIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}+07:00`;
+      const logDate = new Date(isoStr);
+      
+      if (isNaN(logDate.getTime())) return null;
+
+      const REQUIRED_CATEGORIES = ['building', 'yard', 'roof', 'annunciation', 'battery', 'grounding', 'security', 'fence', 'lighting', 'checklist'];
+      let categories: string[] = [];
+      const colH = (row[7] || "").toString().trim();
+      const hasNewFormat = row.slice(7, 17).some(val => {
+        const v = val ? val.toString().trim() : "";
+        return v === "1" || v === "0" || v === "✓" || v === "✔";
+      });
+      
+      if (hasNewFormat) {
+        REQUIRED_CATEGORIES.forEach((cat, i) => {
+          const cellVal = (row[7 + i] || "").toString().trim();
+          if (cellVal === "1" || cellVal === "✓" || cellVal === "✔") {
+            categories.push(cat);
+          }
+        });
+      } else if (colH.includes(',')) {
+        categories = colH.split(',').map(s => s.trim()).filter(Boolean);
+      } else if (colH) {
+        const possibleCat = colH.toLowerCase();
+        if (REQUIRED_CATEGORIES.includes(possibleCat)) {
+          categories.push(possibleCat);
+        }
+      }
+
+      return {
+        timestamp: logDate.toISOString(),
+        day,
+        month: monthIdx + 1,
+        year: yearVal,
+        categories
+      };
+    }).filter((log): log is any => log !== null);
+
+    // Sort by timestamp descending
+    history.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    res.json({ history });
+  } catch (error: any) {
+    console.error("Failed to fetch substation history:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get("/api/dashboard-stats", async (req, res) => {
   const { month, year } = req.query;
   const sheetsService = getSheetsService();

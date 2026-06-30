@@ -335,6 +335,68 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
   const [locationError, setLocationError] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState<boolean>(true);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [substationHistory, setSubstationHistory] = useState<any[]>([]);
+
+  const formatThaiDate = (isoString: string) => {
+    const date = new Date(isoString);
+    if (isNaN(date.getTime())) return "";
+    const day = date.getDate();
+    const thaiMonthsShort = [
+      'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
+    ];
+    const month = thaiMonthsShort[date.getMonth()];
+    const year = date.getFullYear() + 543;
+    return `${day} ${month} ${year}`;
+  };
+
+  const getCategoryStatus = (catId: string) => {
+    const catLogs = substationHistory.filter(log => log.categories && log.categories.includes(catId));
+    
+    if (catLogs.length === 0) {
+      return {
+        lastSubmittedText: "ยังไม่เคยส่ง",
+        daysThisMonthText: "เดือนนี้ยังไม่ได้ส่ง"
+      };
+    }
+
+    const lastLog = catLogs[0];
+    const lastSubmittedText = formatThaiDate(lastLog.timestamp);
+
+    // Filter for current calendar month
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+
+    const thisMonthDays = Array.from(new Set(
+      catLogs
+        .filter(log => log.month === currentMonth && log.year === currentYear)
+        .map(log => log.day)
+    )).sort((a: any, b: any) => Number(a) - Number(b));
+
+    let daysThisMonthText = "";
+    if (thisMonthDays.length > 0) {
+      daysThisMonthText = `ส่งแล้ววันที่ ${thisMonthDays.join(', ')}`;
+    } else {
+      daysThisMonthText = "เดือนนี้ยังไม่ได้ส่ง";
+    }
+
+    return {
+      lastSubmittedText,
+      daysThisMonthText
+    };
+  };
+
+  useEffect(() => {
+    fetch(`/api/substation-history?substationName=${encodeURIComponent(substation.name)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.history) {
+          setSubstationHistory(data.history);
+        }
+      })
+      .catch(err => console.error("Failed to load substation history:", err));
+  }, [substation.name]);
   
   const getGeoLocation = () => {
     if (!navigator.geolocation) {
@@ -852,6 +914,25 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                             </span>
                           )}
                         </div>
+                        {/* Historical Submissions Status */}
+                        {(() => {
+                          const status = getCategoryStatus(point.id);
+                          return (
+                            <div className="flex flex-wrap gap-2 pt-1 pb-1.5">
+                              <span className={cn(
+                                "text-[10px] font-bold px-2 py-0.5 rounded-lg border flex items-center gap-1",
+                                status.daysThisMonthText.startsWith("ส่งแล้ว") 
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-100" 
+                                  : "bg-slate-100 text-slate-500 border-slate-200"
+                              )}>
+                                📅 {status.daysThisMonthText}
+                              </span>
+                              <span className="text-[10px] font-bold bg-violet-50 text-violet-700 border border-violet-100 px-2 py-0.5 rounded-lg flex items-center gap-1">
+                                🕒 ส่งล่าสุด: {status.lastSubmittedText}
+                              </span>
+                            </div>
+                          );
+                        })()}
                         <div className={cn("text-xs leading-relaxed space-y-1.5", isEnabled ? "text-slate-500" : "text-slate-400")}>
                           {point.desc.split('\n').map((line, idx) => (
                             <p key={idx}>{line}</p>
@@ -950,6 +1031,25 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                   <div className="w-2 h-2 rounded-full bg-violet-600 animate-pulse" />
                   <h4 className="font-bold text-base text-slate-900 uppercase tracking-tight">กระดาษ Check List (A4)</h4>
                 </div>
+                {/* Historical Submissions Status */}
+                {(() => {
+                  const status = getCategoryStatus('checklist');
+                  return (
+                    <div className="flex flex-wrap gap-2 pt-1 pb-1.5">
+                      <span className={cn(
+                        "text-[10px] font-bold px-2 py-0.5 rounded-lg border flex items-center gap-1",
+                        status.daysThisMonthText.startsWith("ส่งแล้ว") 
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-100" 
+                          : "bg-slate-100 text-slate-500 border-slate-200"
+                      )}>
+                        📅 {status.daysThisMonthText}
+                      </span>
+                      <span className="text-[10px] font-bold bg-violet-50 text-violet-700 border border-violet-100 px-2 py-0.5 rounded-lg flex items-center gap-1">
+                        🕒 ส่งล่าสุด: {status.lastSubmittedText}
+                      </span>
+                    </div>
+                  );
+                })()}
                 <div className="text-xs text-slate-500 leading-relaxed space-y-1">
                   {"ให้จัดหน้ากระดาษให้ตรง และถ่ายภาพให้เห็นข้อความหรือรอยขีดเขียนอย่างชัดเจน เพื่อให้อ่านรายละเอียดข้อมูลได้ครบถ้วน โดยมีรายการที่ต้องถ่ายดังนี้\n• กระดาษ Check List (A4): ถ่ายภาพ ให้ครบทุกหน้า (ถ่ายหน้าละ 1 รูป)\n• สมุดตรวจเยี่ยมและการเข้าปฏิบัติงานสถานีฯ: ถ่ายภาพ หน้าล่าสุด ที่มีการลงบันทึก (1 รูป)".split('\n').map((line, idx) => (
                     <p key={idx}>{line}</p>
@@ -1019,7 +1119,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                 </>
               ) : (
                 <>
-                  <Upload size={20} /> ส่งรายงานประจำเดือน
+                  <Upload size={20} /> ส่งรายงาน
                 </>
               )}
             </Button>
@@ -1040,7 +1140,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
                   <Upload className="w-10 h-10 text-violet-600" />
                 </div>
                 <h3 className="text-xl font-bold text-slate-900 mb-2">ยืนยันการส่งรายงาน</h3>
-                <p className="text-slate-500 text-sm mb-8">คุณยืนยันที่จะส่งรายงานประจำเดือนของสถานี {substation.name} หรือไม่?</p>
+                <p className="text-slate-500 text-sm mb-8">คุณยืนยันที่จะส่งรายงานของสถานี {substation.name} หรือไม่?</p>
                 
                 <div className="grid grid-cols-2 gap-4">
                   <button 
