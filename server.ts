@@ -911,9 +911,9 @@ app.post("/api/init-upload", requireAuth, async (req: any, res: any) => {
       timeZone: "Asia/Bangkok"
     }).format(dateObj).replace(/\//g, ""); 
     
-    const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID;
+    const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
     if (!parentFolderId) {
-      return res.status(500).json({ error: "ยังไม่ได้ตั้งค่า GOOGLE_DRIVE_PARENT_FOLDER_ID ในระบบ" });
+      return res.status(500).json({ error: "ยังไม่ได้ตั้งค่า GOOGLE_DRIVE_PARENT_FOLDER_ID หรือ GOOGLE_DRIVE_ROOT_FOLDER_ID ในระบบ" });
     }
 
     // 1. Find or Create Main Substation Folder (Use DB for consistency)
@@ -1133,9 +1133,9 @@ app.post("/api/upload-inspection", requireAuth, upload.array("photos"), async (r
       timeZone: "Asia/Bangkok"
     }).format(dateObj).replace(/\//g, ""); 
     
-    const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID;
+    const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
     if (!parentFolderId) {
-      return res.status(500).json({ error: "ยังไม่ได้ตั้งค่า GOOGLE_DRIVE_PARENT_FOLDER_ID ในระบบ" });
+      return res.status(500).json({ error: "ยังไม่ได้ตั้งค่า GOOGLE_DRIVE_PARENT_FOLDER_ID หรือ GOOGLE_DRIVE_ROOT_FOLDER_ID ในระบบ" });
     }
 
     // 1. Find or Create Main Substation Folder (e.g., "สถานีไฟฟ้านครชัยศรี 1")
@@ -1589,7 +1589,7 @@ app.post("/api/analyze-substation", requireAdmin, async (req: any, res: any) => 
     }
     const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
     if (!parentFolderId) {
-      return res.status(500).json({ error: "ยังไม่ได้ตั้งค่า GOOGLE_DRIVE_PARENT_FOLDER_ID ในระบบ" });
+      return res.status(500).json({ error: "ยังไม่ได้ตั้งค่า GOOGLE_DRIVE_PARENT_FOLDER_ID หรือ GOOGLE_DRIVE_ROOT_FOLDER_ID ในระบบ" });
     }
     
     // 0. Verify Parent Folder Access
