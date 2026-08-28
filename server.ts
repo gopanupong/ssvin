@@ -27,9 +27,11 @@ function getDbPool() {
   if (dbPool) return dbPool;
   if (!process.env.DATABASE_URL) return null;
   try {
+    const isSslDisabled = process.env.DB_SSL_REJECT_UNAUTHORIZED === 'false';
+    const isLocalhost = process.env.DATABASE_URL.includes("localhost") || process.env.DATABASE_URL.includes("127.0.0.1");
     dbPool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false }
+      ssl: isLocalhost ? false : (isSslDisabled ? { rejectUnauthorized: false } : true)
     });
     return dbPool;
   } catch (err) {
@@ -37,6 +39,30 @@ function getDbPool() {
     return null;
   }
 }
+
+// Authentication & Access Control Middleware
+const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const employeeId = (req.headers['x-employee-id'] || req.query.employeeId || req.body?.employeeId) as string;
+  if (!employeeId || typeof employeeId !== 'string' || !/^\d{6}$/.test(employeeId.trim())) {
+    return res.status(401).json({ error: "Unauthorized: กรุณาเข้าสู่ระบบด้วยรหัสพนักงาน 6 หลัก" });
+  }
+  (req as any).user = { employeeId: employeeId.trim() };
+  next();
+};
+
+const requireAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const employeeId = (req.headers['x-employee-id'] || req.query.employeeId || req.body?.employeeId) as string;
+  const adminKey = req.headers['x-admin-key'] as string;
+  const configuredAdminKey = process.env.ADMIN_KEY;
+
+  const isMasterEmployee = employeeId === '081810';
+  const isValidAdminKey = configuredAdminKey && adminKey === configuredAdminKey;
+
+  if (!isMasterEmployee && !isValidAdminKey) {
+    return res.status(403).json({ error: "Forbidden: สิทธิ์การเข้าถึงเฉพาะผู้ดูแลระบบเท่านั้น" });
+  }
+  next();
+};
 
 async function initDb() {
   const pool = getDbPool();
@@ -245,6 +271,8 @@ async function saveAnalysisResult(result: any) {
   const spreadsheetId = process.env.GOOGLE_SHEET_ID;
   if (!spreadsheetId) return;
 
+  const findingsStr = Array.isArray(result.findings) ? result.findings.join(',') : (result.findings || '');
+
   await sheets.spreadsheets.values.append({
     spreadsheetId,
     range: "AI_Analysis!A:G",
@@ -255,7 +283,7 @@ async function saveAnalysisResult(result: any) {
         result.fileName,
         result.folderId,
         result.status,
-        result.findings.join(','),
+        findingsStr,
         result.summary,
         new Date().toISOString()
       ]]
@@ -268,7 +296,7 @@ async function initDatabaseSheet() {
   const auth = getGoogleAuth();
   if (!auth) return;
   const sheetsService = google.sheets({ version: "v4", auth });
-  const spreadsheetId = process.env.GOOGLE_SHEET_ID || "1WpvuQnhXzufiBmSRSaEnkRFs9BJf5H4fIWZ0xoYC8iw";
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
   if (!spreadsheetId) return;
 
   try {
@@ -310,7 +338,7 @@ async function getHealthIndexFromSheet(): Promise<any[]> {
   const auth = getGoogleAuth();
   if (!auth) return [];
   const sheetsService = google.sheets({ version: "v4", auth });
-  const spreadsheetId = process.env.GOOGLE_SHEET_ID || "1WpvuQnhXzufiBmSRSaEnkRFs9BJf5H4fIWZ0xoYC8iw";
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
   if (!spreadsheetId) return [];
 
   try {
@@ -356,7 +384,7 @@ async function saveHealthIndexToSheet(data: any) {
   const auth = getGoogleAuth();
   if (!auth) return;
   const sheetsService = google.sheets({ version: "v4", auth });
-  const spreadsheetId = process.env.GOOGLE_SHEET_ID || "1WpvuQnhXzufiBmSRSaEnkRFs9BJf5H4fIWZ0xoYC8iw";
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
   if (!spreadsheetId) return;
 
   try {
@@ -576,7 +604,7 @@ app.get("/api/drive/status", (req, res) => {
 });
 
 // List subfolders of a parent folder
-app.get("/api/drive/subfolders/:parentFolderId", async (req: any, res: any) => {
+app.get("/api/drive/subfolders/:parentFolderId", requireAdmin, async (req: any, res: any) => {
   const { parentFolderId } = req.params;
   const driveService = getDriveService();
   if (!driveService) return res.status(500).json({ error: "Drive service not configured" });
@@ -594,7 +622,7 @@ app.get("/api/drive/subfolders/:parentFolderId", async (req: any, res: any) => {
 });
 
 // List images in a folder and their analysis status
-app.get("/api/drive/folder/:folderId/images", async (req: any, res: any) => {
+app.get("/api/drive/folder/:folderId/images", requireAdmin, async (req: any, res: any) => {
   const { folderId } = req.params;
   const driveService = getDriveService();
   if (!driveService) return res.status(500).json({ error: "Drive service not configured" });
@@ -627,7 +655,7 @@ app.get("/api/drive/folder/:folderId/images", async (req: any, res: any) => {
 });
 
 // Analyze a single image
-app.post("/api/analyze-image", async (req: any, res: any) => {
+app.post("/api/analyze-image", requireAdmin, async (req: any, res: any) => {
   const { fileId, fileName, folderId, mimeType, force } = req.body;
   const driveService = getDriveService();
   const apiKey = process.env.GEMINI_API_KEY;
@@ -723,7 +751,7 @@ app.post("/api/analyze-image", async (req: any, res: any) => {
 
     // Add a timeout to Gemini call to prevent hanging
     const analysisPromise = generateContentWithRetry(ai, {
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: [
         { 
           parts: [
@@ -754,7 +782,8 @@ app.post("/api/analyze-image", async (req: any, res: any) => {
 
     const genResult = await Promise.race([analysisPromise, timeoutPromise]) as any;
 
-    const analysisResult = JSON.parse(genResult.text || '{}');
+    const rawText = (genResult.text || '{}').replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
+    const analysisResult = JSON.parse(rawText || '{}');
     console.timeEnd(`Analysis-${fileId}`);
     const finalResult = {
       fileId,
@@ -848,10 +877,14 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "SSVI API is running" });
 });
 
-// 1. Initialize Upload: Create folders and return Access Token
-app.post("/api/init-upload", async (req: any, res: any) => {
+// 1. Initialize Upload: Create folders (without leaking accessToken to client)
+app.post("/api/init-upload", requireAuth, async (req: any, res: any) => {
   const { substationName, timestamp } = req.body;
   
+  if (!substationName) {
+    return res.status(400).json({ error: "กรุณาระบุชื่อสถานีไฟฟ้า" });
+  }
+
   // Simple lock to prevent concurrent creation of the same folder
   const lockKey = `${substationName}-${timestamp?.split('T')[0]}`;
   if (folderCreationLocks.has(lockKey)) {
@@ -865,19 +898,11 @@ app.post("/api/init-upload", async (req: any, res: any) => {
   const pool = getDbPool();
 
   if (!driveService || !auth) {
+    folderCreationLocks.delete(lockKey);
     return res.status(500).json({ error: "Google Drive service not configured" });
   }
 
   try {
-    // Get fresh access token
-    const tokenResponse = await auth.getAccessToken();
-    const accessToken = tokenResponse.token;
-
-    if (!accessToken) {
-      console.error("Access token is empty");
-      return res.status(500).json({ error: "Failed to generate Google Access Token. Please check your Refresh Token." });
-    }
-
     const dateObj = timestamp ? new Date(timestamp) : new Date();
     const dateStr = new Intl.DateTimeFormat("th-TH", {
       day: "2-digit",
@@ -886,7 +911,10 @@ app.post("/api/init-upload", async (req: any, res: any) => {
       timeZone: "Asia/Bangkok"
     }).format(dateObj).replace(/\//g, ""); 
     
-    const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || "1IzXUWJfucyb47Dr32QSVIxBKmoMrWF6J";
+    const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID;
+    if (!parentFolderId) {
+      return res.status(500).json({ error: "ยังไม่ได้ตั้งค่า GOOGLE_DRIVE_PARENT_FOLDER_ID ในระบบ" });
+    }
 
     // 1. Find or Create Main Substation Folder (Use DB for consistency)
     let mainFolderId;
@@ -953,8 +981,8 @@ app.post("/api/init-upload", async (req: any, res: any) => {
       dailyFolderId = folder.data.id;
     }
 
+    // Return folderId ONLY (accessToken is kept strictly on the server for security)
     res.json({ 
-      accessToken, 
       folderId: dailyFolderId 
     });
   } catch (error: any) {
@@ -965,8 +993,43 @@ app.post("/api/init-upload", async (req: any, res: any) => {
   }
 });
 
+// Secure Photo Upload Proxy: Uploads single compressed photo to Google Drive directly from server
+app.post("/api/upload-photo", requireAuth, upload.single("file"), async (req: any, res: any) => {
+  const { folderId, filename } = req.body;
+  const file = req.file;
+
+  if (!file || !folderId || !filename) {
+    return res.status(400).json({ error: "Missing file, filename, or folderId" });
+  }
+
+  const driveService = getDriveService();
+  if (!driveService) {
+    return res.status(500).json({ error: "Google Drive service not configured" });
+  }
+
+  try {
+    const fileMetadata = {
+      name: filename,
+      parents: [folderId],
+    };
+    const media = {
+      mimeType: file.mimetype || 'image/jpeg',
+      body: Readable.from(file.buffer),
+    };
+    const driveRes = await driveService.files.create({
+      requestBody: fileMetadata,
+      media: media,
+      fields: "id, name",
+    });
+    res.json({ success: true, fileId: driveRes.data.id, name: driveRes.data.name });
+  } catch (error: any) {
+    console.error("Upload photo error:", error);
+    res.status(500).json({ error: error.message || "Failed to upload photo to Google Drive" });
+  }
+});
+
 // 2. Complete Upload: Log to DB and Sheets
-app.post("/api/complete-upload", async (req: any, res: any) => {
+app.post("/api/complete-upload", requireAuth, async (req: any, res: any) => {
   const { employeeId, substationName, lat, lng, timestamp, folderId, categories } = req.body;
   
   try {
@@ -987,7 +1050,7 @@ app.post("/api/complete-upload", async (req: any, res: any) => {
 
     // Log to Google Sheets
     const sheetsService = getSheetsService();
-    const sheetId = process.env.GOOGLE_SHEET_ID || "1WpvuQnhXzufiBmSRSaEnkRFs9BJf5H4fIWZ0xoYC8iw";
+    const sheetId = process.env.GOOGLE_SHEET_ID;
     if (sheetsService && sheetId) {
       try {
         const options: Intl.DateTimeFormatOptions = { 
@@ -999,7 +1062,7 @@ app.post("/api/complete-upload", async (req: any, res: any) => {
         const dateTimeStr = new Intl.DateTimeFormat("th-TH", options).format(dateObj);
 
         const REQUIRED_CATEGORIES = ['building', 'yard', 'roof', 'annunciation', 'battery', 'grounding', 'security', 'fence', 'lighting', 'checklist'];
-        const categoryChecks = REQUIRED_CATEGORIES.map(cat => categories.split(',').includes(cat) ? "1" : "0");
+        const categoryChecks = REQUIRED_CATEGORIES.map(cat => (categories || '').split(',').includes(cat) ? "1" : "0");
 
         const rowData = [
           dateTimeStr,
@@ -1029,7 +1092,7 @@ app.post("/api/complete-upload", async (req: any, res: any) => {
   }
 });
 
-app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res: any) => {
+app.post("/api/upload-inspection", requireAuth, upload.array("photos"), async (req: any, res: any) => {
   const { employeeId, substationName, lat, lng, timestamp } = req.body;
   
   // Deduplication check
@@ -1070,7 +1133,10 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
       timeZone: "Asia/Bangkok"
     }).format(dateObj).replace(/\//g, ""); 
     
-    const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || "1IzXUWJfucyb47Dr32QSVIxBKmoMrWF6J";
+    const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID;
+    if (!parentFolderId) {
+      return res.status(500).json({ error: "ยังไม่ได้ตั้งค่า GOOGLE_DRIVE_PARENT_FOLDER_ID ในระบบ" });
+    }
 
     // 1. Find or Create Main Substation Folder (e.g., "สถานีไฟฟ้านครชัยศรี 1")
     let mainFolderId;
@@ -1156,7 +1222,7 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
 
     // 4. Log to Google Sheets
     const sheetsService = getSheetsService();
-    const sheetId = process.env.GOOGLE_SHEET_ID || "1WpvuQnhXzufiBmSRSaEnkRFs9BJf5H4fIWZ0xoYC8iw";
+    const sheetId = process.env.GOOGLE_SHEET_ID;
     if (sheetsService && sheetId) {
       try {
         // Format date/time explicitly for Google Sheets in Thailand timezone
@@ -1219,14 +1285,14 @@ app.post("/api/upload-inspection", upload.array("photos"), async (req: any, res:
   }
 });
 
-app.get("/api/substation-history", async (req: any, res: any) => {
+app.get("/api/substation-history", requireAuth, async (req: any, res: any) => {
   const { substationName } = req.query;
   if (!substationName) {
     return res.status(400).json({ error: "กรุณาระบุชื่อสถานีไฟฟ้า" });
   }
 
   const sheetsService = getSheetsService();
-  const sheetId = process.env.GOOGLE_SHEET_ID || "1WpvuQnhXzufiBmSRSaEnkRFs9BJf5H4fIWZ0xoYC8iw";
+  const sheetId = process.env.GOOGLE_SHEET_ID;
 
   if (!sheetsService) {
     return res.json({ history: [], error: "ยังไม่ได้เชื่อมต่อ Google Sheets หรือขาด Refresh Token" });
@@ -1255,9 +1321,16 @@ app.get("/api/substation-history", async (req: any, res: any) => {
       const parts = dateStr.split(/[\s/:]+/);
       if (parts.length < 3) return null;
       
-      const day = parseInt(parts[0]);
-      const monthIdx = parseInt(parts[1]) - 1;
+      let day = parseInt(parts[0]);
+      let monthIdx = parseInt(parts[1]) - 1;
       let yearVal = parseInt(parts[2]);
+
+      // Swap day and month if month is out of bounds (> 11) and day is within valid month range (<= 12)
+      if (monthIdx >= 12 && day <= 12) {
+        const temp = day;
+        day = monthIdx + 1;
+        monthIdx = temp - 1;
+      }
 
       if (yearVal < 100) {
         if (yearVal > 50) yearVal += 2500;
@@ -1317,10 +1390,10 @@ app.get("/api/substation-history", async (req: any, res: any) => {
   }
 });
 
-app.get("/api/dashboard-stats", async (req, res) => {
+app.get("/api/dashboard-stats", requireAdmin, async (req, res) => {
   const { month, year } = req.query;
   const sheetsService = getSheetsService();
-  const sheetId = process.env.GOOGLE_SHEET_ID || "1WpvuQnhXzufiBmSRSaEnkRFs9BJf5H4fIWZ0xoYC8iw";
+  const sheetId = process.env.GOOGLE_SHEET_ID;
 
   if (!sheetsService) {
     return res.json({ total: 0, recent: [], error: "ยังไม่ได้เชื่อมต่อ Google Sheets หรือขาด Refresh Token" });
@@ -1348,9 +1421,16 @@ app.get("/api/dashboard-stats", async (req, res) => {
       const parts = dateStr.split(/[\s/:]+/);
       if (parts.length < 3) return null;
       
-      const day = parseInt(parts[0]);
-      const monthIdx = parseInt(parts[1]) - 1;
+      let day = parseInt(parts[0]);
+      let monthIdx = parseInt(parts[1]) - 1;
       let yearVal = parseInt(parts[2]);
+
+      // Swap day and month if month is out of bounds (> 11) and day is within valid month range (<= 12)
+      if (monthIdx >= 12 && day <= 12) {
+        const temp = day;
+        day = monthIdx + 1;
+        monthIdx = temp - 1;
+      }
 
       if (yearVal < 100) {
         // Handle 2-digit years
@@ -1466,7 +1546,7 @@ app.get("/api/dashboard-stats", async (req, res) => {
 });
 
 // AI Analysis Endpoint
-app.post("/api/analyze-substation", async (req: any, res: any) => {
+app.post("/api/analyze-substation", requireAdmin, async (req: any, res: any) => {
   const { substationName, month, year, dryRun, force } = req.body;
   const driveService = getDriveService();
   const apiKey = process.env.GEMINI_API_KEY;
@@ -1507,7 +1587,10 @@ app.post("/api/analyze-substation", async (req: any, res: any) => {
         }
       }
     }
-    const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || "1IzXUWJfucyb47Dr32QSVIxBKmoMrWF6J";
+    const parentFolderId = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
+    if (!parentFolderId) {
+      return res.status(500).json({ error: "ยังไม่ได้ตั้งค่า GOOGLE_DRIVE_PARENT_FOLDER_ID ในระบบ" });
+    }
     
     // 0. Verify Parent Folder Access
     try {
@@ -1740,7 +1823,7 @@ In the 'summary' field, provide a detailed analysis in Thai about what was surve
 
           console.log(`Calling Gemini for image: ${img.name}...`);
           const genResult = await generateContentWithRetry(ai, {
-            model: "gemini-3.5-flash",
+            model: "gemini-2.5-flash",
             contents: [
               { 
                 parts: [
@@ -1765,7 +1848,8 @@ In the 'summary' field, provide a detailed analysis in Thai about what was surve
             }
           });
 
-          const analysis = JSON.parse(genResult.text || '{}');
+          const rawAnalysisText = (genResult.text || '{}').replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
+          const analysis = JSON.parse(rawAnalysisText || '{}');
           const resultWithMeta = {
             ...analysis,
             fileId: img.id,
@@ -1963,7 +2047,7 @@ In the 'summary' field, provide a detailed analysis in Thai about what was surve
   }
 });
 
-app.get("/api/health-index", async (req, res) => {
+app.get("/api/health-index", requireAuth, async (req, res) => {
   const { month, year } = req.query;
   const filterMonth = parseInt(month as string);
   const filterYear = parseInt(year as string);
@@ -1993,7 +2077,7 @@ app.get("/api/health-index", async (req, res) => {
   }
 });
 
-app.post("/api/save-health-audit", async (req: any, res: any) => {
+app.post("/api/save-health-audit", requireAdmin, async (req: any, res: any) => {
   const { 
     substationName, month, year, 
     battery_score, battery_na,
@@ -2083,20 +2167,19 @@ app.post("/api/save-health-audit", async (req: any, res: any) => {
   }
 });
 
-app.get("/api/debug-db", async (req, res) => {
+// Debug endpoint: Restricted to non-production or authenticated admin only
+app.get("/api/debug-db", requireAdmin, async (req, res) => {
+  if (process.env.NODE_ENV === "production" && !process.env.ADMIN_KEY) {
+    return res.status(403).json({ error: "Forbidden in production" });
+  }
   const pool = getDbPool();
   if (!pool) return res.json({ error: "No DATABASE_URL found in environment variables." });
   try {
     const result = await pool.query("SELECT COUNT(*) FROM inspection_logs");
-    const sample = await pool.query("SELECT * FROM inspection_logs ORDER BY timestamp DESC LIMIT 5");
     res.json({ 
       connected: true, 
       count: result.rows[0].count, 
-      sample: sample.rows,
-      env: {
-        hasDbUrl: !!process.env.DATABASE_URL,
-        nodeEnv: process.env.NODE_ENV
-      }
+      hasDbUrl: !!process.env.DATABASE_URL
     });
   } catch (e: any) {
     res.json({ connected: false, error: e.message });

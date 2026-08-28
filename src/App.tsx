@@ -388,7 +388,9 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
   };
 
   useEffect(() => {
-    fetch(`/api/substation-history?substationName=${encodeURIComponent(substation.name)}`)
+    fetch(`/api/substation-history?substationName=${encodeURIComponent(substation.name)}`, {
+      headers: { 'x-employee-id': employeeId }
+    })
       .then(res => res.json())
       .then(data => {
         if (data.history) {
@@ -396,7 +398,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
         }
       })
       .catch(err => console.error("Failed to load substation history:", err));
-  }, [substation.name]);
+  }, [substation.name, employeeId]);
   
   const getGeoLocation = () => {
     if (!navigator.geolocation) {
@@ -555,7 +557,7 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
 
           canvas.toBlob((blob) => {
             if (blob) resolve(blob);
-            else reject('Canvas to Blob failed');
+            else reject(new Error('Canvas to Blob failed'));
           }, 'image/jpeg', 0.9);
         };
         img.src = event.target?.result as string;
@@ -612,15 +614,18 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
       }).replace(/\//g, "");
       const nameSuffix = `${timeStr}_${dateStr}`;
 
-      // 1. Initialize Upload (Get Token and Folder ID) with retries
+      // 1. Initialize Upload (Get Folder ID) with retries
       let initRes: Response | null = null;
       const initMaxAttempts = 3;
       for (let attempt = 1; attempt <= initMaxAttempts; attempt++) {
         try {
           initRes = await fetch('/api/init-upload', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ substationName: substation.name, timestamp: now.toISOString() })
+            headers: { 
+              'Content-Type': 'application/json',
+              'x-employee-id': employeeId
+            },
+            body: JSON.stringify({ substationName: substation.name, timestamp: now.toISOString(), employeeId })
           });
           if (initRes.ok) break;
         } catch (e: any) {
@@ -640,16 +645,11 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
         throw new Error(errDesc);
       }
       
-      const { accessToken, folderId } = await initRes.json();
+      const { folderId } = await initRes.json();
       const categoriesInSubmission = new Set<string>();
 
-      // Helper to upload directly to Google Drive with automatic retries (up to 4 attempts)
+      // Helper to upload via secure backend proxy with automatic retries (up to 4 attempts)
       const uploadToDrive = async (blob: Blob, filename: string, itemIndex: number, total: number) => {
-        const metadata = {
-          name: filename,
-          parents: [folderId]
-        };
-
         const maxAttempts = 4;
         let lastError: any = null;
 
@@ -662,13 +662,14 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
             }
 
             const formData = new FormData();
-            formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-            formData.append('file', blob);
+            formData.append('folderId', folderId);
+            formData.append('filename', filename);
+            formData.append('file', blob, filename);
 
-            const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+            const response = await fetch('/api/upload-photo', {
               method: 'POST',
               headers: {
-                'Authorization': `Bearer ${accessToken}`
+                'x-employee-id': employeeId
               },
               body: formData
             });
@@ -677,11 +678,11 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
               let errorMsg = response.statusText;
               try {
                 const errorData = await response.json();
-                errorMsg = errorData.error?.message || response.statusText;
+                errorMsg = errorData.error || response.statusText;
               } catch (e) {
                 // Ignore if not JSON
               }
-              throw new Error(`Drive upload failed (${response.status}): ${errorMsg}`);
+              throw new Error(`Upload failed (${response.status}): ${errorMsg}`);
             }
             return await response.json();
           } catch (err: any) {
@@ -749,7 +750,10 @@ const InspectionPage = ({ substation, employeeId, onBack, onComplete }: { substa
           }
           finalizeRes = await fetch('/api/complete-upload', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'x-employee-id': employeeId
+            },
             body: JSON.stringify({
               employeeId,
               substationName: substation.name,
@@ -1199,7 +1203,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   const [testingConnection, setTestingConnection] = useState(false);
 
   const checkDriveStatus = () => {
-    fetch('/api/drive/status')
+    fetch('/api/drive/status', { headers: { 'x-employee-id': '081810' } })
       .then(res => res.json())
       .then(data => setDriveStatus(data))
       .catch(err => console.error("Failed to fetch drive status:", err));
@@ -1212,7 +1216,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   const testDriveConnection = async () => {
     setTestingConnection(true);
     try {
-      const res = await fetch('/api/drive/subfolders/root');
+      const res = await fetch('/api/drive/subfolders/root', { headers: { 'x-employee-id': '081810' } });
       const data = await res.json();
       if (res.ok) {
         alert("✅ เชื่อมต่อ Google Drive สำเร็จ! สามารถอ่านข้อมูลได้ปกติ");
@@ -1231,7 +1235,7 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
     setSelectedFolderId(folderId);
     setIsFetchingImages(true);
     try {
-      const res = await fetch(`/api/drive/folder/${folderId}/images`);
+      const res = await fetch(`/api/drive/folder/${folderId}/images`, { headers: { 'x-employee-id': '081810' } });
       const data = await res.json();
       setImagesInFolder(data);
       updateAnalysisSummary(data);
@@ -1272,7 +1276,10 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
     try {
       const res = await fetch('/api/analyze-image', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-employee-id': '081810'
+        },
         body: JSON.stringify({
           fileId: image.id,
           fileName: image.name,
@@ -1372,14 +1379,18 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
   const years = Array.from({ length: 9 }, (_, i) => 2024 + i);
 
   const fetchHealthIndex = () => {
-    fetch(`/api/health-index?month=${selectedMonth + 1}&year=${selectedYear}`)
+    fetch(`/api/health-index?month=${selectedMonth + 1}&year=${selectedYear}`, {
+      headers: { 'x-employee-id': '081810' }
+    })
       .then(res => res.json())
       .then(data => setHealthIndex(data));
   };
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/dashboard-stats?month=${selectedMonth + 1}&year=${selectedYear}`)
+    fetch(`/api/dashboard-stats?month=${selectedMonth + 1}&year=${selectedYear}`, {
+      headers: { 'x-employee-id': '081810' }
+    })
       .then(res => res.json())
       .then(data => {
         setStats(data);
@@ -1393,7 +1404,10 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
     onProgress("ค้นหาโฟลเดอร์...");
     const dryRunRes = await fetch('/api/analyze-substation', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-employee-id': '081810'
+      },
       body: JSON.stringify({ substationName, month: selectedMonth + 1, year: selectedYear, dryRun: true })
     });
     
@@ -1411,7 +1425,10 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
       // Let's call the server without dryRun to fetch that state.
       const noDataRes = await fetch('/api/analyze-substation', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-employee-id': '081810'
+        },
         body: JSON.stringify({ substationName, month: selectedMonth + 1, year: selectedYear, force: false })
       });
       return await noDataRes.json();
@@ -1419,7 +1436,9 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
     
     // 2. Fetch images in the folder
     onProgress("ดึงรูปภาพ...");
-    const imagesRes = await fetch(`/api/drive/folder/${folderId}/images`);
+    const imagesRes = await fetch(`/api/drive/folder/${folderId}/images`, {
+      headers: { 'x-employee-id': '081810' }
+    });
     if (!imagesRes.ok) {
       throw new Error("ไม่สามารถดึงรูปภาพจาก Google Drive ได้");
     }
@@ -1429,7 +1448,10 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
       // No images. Let's call the server to finalize the "No Image" state.
       const noImageRes = await fetch('/api/analyze-substation', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-employee-id': '081810'
+        },
         body: JSON.stringify({ substationName, month: selectedMonth + 1, year: selectedYear, force: false })
       });
       return await noImageRes.json();
@@ -1448,7 +1470,10 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
         try {
           const resImg = await fetch('/api/analyze-image', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'x-employee-id': '081810'
+            },
             body: JSON.stringify({
               fileId: img.id,
               fileName: img.name,
@@ -1474,7 +1499,10 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
     onProgress("ประมวลผลสรุป...");
     const finalRes = await fetch('/api/analyze-substation', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-employee-id': '081810'
+      },
       body: JSON.stringify({ substationName, month: selectedMonth + 1, year: selectedYear, force: false, reaggregate: true })
     });
     
@@ -1562,7 +1590,10 @@ const DashboardPage = ({ onBack }: { onBack: () => void }) => {
     try {
       const response = await fetch('/api/save-health-audit', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-employee-id': '081810'
+        },
         body: JSON.stringify({
           substationName: auditData.substation_name,
           month: selectedMonth + 1,
